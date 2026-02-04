@@ -63,9 +63,16 @@ const gracefulShutdown = async (signal: string) => {
 		await bot.stopPolling();
 		console.log('✅ Bot stopped polling');
 
-		// Close health check server
-		healthServer.close(() => {
-			console.log('✅ Health server closed');
+		// Close health check server (await completion)
+		await new Promise<void>((resolve, reject) => {
+			healthServer.close((err) => {
+				if (err) {
+					reject(err);
+				} else {
+					console.log('✅ Health server closed');
+					resolve();
+				}
+			});
 		});
 
 		// Clear sessions
