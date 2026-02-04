@@ -7,8 +7,8 @@ import { handleConnect, handleTransact, handleDisconnect } from './commands';
 const token = process.env.TELEGRAM_TOKEN ?? '';
 const bot = new TelegramBot(token, { polling: true });
 const privy = new PrivyClient({
-  appId: process.env.PRIVY_APP_ID ?? '',
-  appSecret: process.env.PRIVY_APP_SECRET ?? '',
+	appId: process.env.PRIVY_APP_ID ?? '',
+	appSecret: process.env.PRIVY_APP_SECRET ?? '',
 });
 
 // In-memory session storage (Map for user data)
@@ -18,13 +18,23 @@ const sessions = new Map<number, SessionData>();
 // Shared dependencies for command handlers
 const deps = { bot, privy, sessions };
 
+const logSafeError = (label: string, err: unknown) => {
+	if (err instanceof Error) {
+		console.error(label, { message: err.message, stack: err.stack });
+		return;
+	}
+
+	console.error(label, String(err));
+}
+
+
 // Global error handler
 bot.on('error', (error) => {
-  console.error('[Bot Error]', error);
+	logSafeError('[Bot Error]', error);
 });
 
 bot.on('polling_error', (error) => {
-  console.error('[Polling Error]', error);
+	logSafeError('[Polling Error]', error);
 });
 
 // Command handlers
@@ -37,15 +47,15 @@ bot.onText(/\/disconnect/, (msg) => handleDisconnect(msg, deps));
 
 // Startup validation
 (() => {
-  const requiredEnvVars = ['TELEGRAM_TOKEN', 'PRIVY_APP_ID', 'PRIVY_APP_SECRET', 'PRIVY_SIGNER_ID'];
-  const missing = requiredEnvVars.filter(v => !process.env[v]);
+	const requiredEnvVars = ['TELEGRAM_TOKEN', 'PRIVY_APP_ID', 'PRIVY_APP_SECRET', 'PRIVY_SIGNER_ID'];
+	const missing = requiredEnvVars.filter(v => !process.env[v]);
 
-  if (missing.length > 0) {
-    console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
-    console.error('Please check your .env file and ensure all required variables are set.');
-    process.exit(1);
-  }
+	if (missing.length > 0) {
+		console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
+		console.error('Please check your .env file and ensure all required variables are set.');
+		process.exit(1);
+	}
 
-  console.log('✅ Bot started successfully');
-  console.log('📱 Listening for commands: /connect, /transact, /disconnect');
+	console.log('✅ Bot started successfully');
+	console.log('📱 Listening for commands: /connect, /transact, /disconnect');
 })();
