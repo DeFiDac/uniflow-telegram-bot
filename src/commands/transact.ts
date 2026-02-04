@@ -64,6 +64,7 @@ function setupMessageHandler(
 
 			if (response === 'yes') {
 				try {
+					//TODO: use function parameters to create dynamic transactions
 					const txParams = {
 						to: '0x...', // recipient address
 						value: '0', // amount in wei
