@@ -52,6 +52,7 @@ function setupMessageHandler(
 
 		try {
 			if (!msg.text) {
+				pendingConfirmations.delete(userId);
 				await bot.sendMessage(chatId, '❌ Please reply with text: YES or NO.');
 				return;
 			}
