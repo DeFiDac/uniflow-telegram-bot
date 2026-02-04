@@ -3,7 +3,7 @@ import TelegramBot from 'node-telegram-bot-api';
 export const createMockMessage = (overrides?: Partial<TelegramBot.Message>): TelegramBot.Message =>
 	({
 		message_id: 1,
-		date: Date.now(),
+		date: Math.floor(Date.now() / 1000), // Telegram uses Unix timestamp in seconds
 		chat: {
 			id: 123456,
 			type: 'private',
