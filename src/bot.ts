@@ -1,6 +1,7 @@
 require('dotenv').config();
 import TelegramBot from 'node-telegram-bot-api';
 import { PrivyClient } from '@privy-io/node';
+import { SessionData } from './types';
 import { handleConnect, handleTransact, handleDisconnect } from './commands';
 
 const token = process.env.TELEGRAM_TOKEN ?? '';
@@ -12,7 +13,7 @@ const privy = new PrivyClient({
 
 // In-memory session storage (Map for user data)
 // TODO: upgrade to DB for persistence
-const sessions = new Map();
+const sessions = new Map<number, SessionData>();
 
 const RESPONSE_TIMEOUT = 60000;
 
