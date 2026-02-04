@@ -40,6 +40,9 @@ const deps = { bot, privy, sessions };
 // Start health check server
 const healthServer = startHealthServer();
 
+// Shutdown guard to prevent multiple executions
+let isShuttingDown = false;
+
 const logSafeError = (label: string, err: unknown) => {
 	if (err instanceof Error) {
 		console.error(label, { message: err.message, stack: err.stack });
@@ -56,6 +59,15 @@ bot.on('error', (error) => {
 
 // Graceful shutdown handler
 const gracefulShutdown = async (signal: string) => {
+	// Idempotency guard: return immediately if already shutting down
+	if (isShuttingDown) {
+		console.log(`${signal} received, but shutdown already in progress. Ignoring.`);
+		return;
+	}
+
+	// Set guard to prevent duplicate executions
+	isShuttingDown = true;
+
 	console.log(`\n${signal} received. Shutting down gracefully...`);
 
 	try {
