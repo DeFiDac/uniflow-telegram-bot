@@ -3,7 +3,7 @@ import { PrivyClient } from '@privy-io/node';
 
 export interface SessionData {
   userId: string;    // Privy user ID
-  walletId: string;  // Wallet ID or address
+  walletId: string;  // Privy wallet ID (lowercase alphanumeric, e.g., "id2tptkqrxd39qo9j423etij")
 }
 
 export interface CommandDependencies {

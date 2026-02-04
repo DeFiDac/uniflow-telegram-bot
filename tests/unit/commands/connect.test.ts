@@ -5,6 +5,7 @@ import { createMockPrivyClient, MockPrivyClient } from '@tests/setup/mocks/privy
 import { createMockMessage, mockMessageWithoutFrom, mockMessageWithoutChat } from '@tests/fixtures/telegram-messages';
 import { mockPrivyUser, mockPrivyUserWithWallet, mockWallet } from '@tests/fixtures/privy-responses';
 import { SessionData } from '@/types';
+import { APIError } from '@privy-io/node';
 
 describe('handleConnect', () => {
   let mockBot: MockTelegramBot;
@@ -21,7 +22,9 @@ describe('handleConnect', () => {
     it('should create new Privy user when none exists', async () => {
       // Arrange
       const msg = createMockMessage();
-      mockPrivy.users().getByTelegramUserID.mockRejectedValue(new Error('User not found'));
+      const notFoundError = Object.assign(new Error('User not found'), { status: 404 });
+      Object.setPrototypeOf(notFoundError, APIError.prototype);
+      mockPrivy.users().getByTelegramUserID.mockRejectedValue(notFoundError);
       mockPrivy.users().create.mockResolvedValue(mockPrivyUser);
       mockPrivy.wallets().create.mockResolvedValue(mockWallet);
 
@@ -67,7 +70,7 @@ describe('handleConnect', () => {
       expect(sessions.has(789)).toBe(true);
     });
 
-    it('should reuse existing wallet', async () => {
+    it('should reuse existing embedded wallet with ID', async () => {
       // Arrange
       const msg = createMockMessage();
       mockPrivy.users().getByTelegramUserID.mockResolvedValue(mockPrivyUserWithWallet);
@@ -77,7 +80,7 @@ describe('handleConnect', () => {
 
       // Assert
       expect(mockPrivy.wallets().create).not.toHaveBeenCalled();
-      expect(sessions.get(789)?.walletId).toBe('0x1234567890abcdef');
+      expect(sessions.get(789)?.walletId).toBe('id2tptkqrxd39qo9j423etij');  // Wallet ID from embedded wallet
     });
   });
 

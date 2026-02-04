@@ -10,13 +10,15 @@ export const mockPrivyUserWithWallet = {
     {
       type: 'wallet' as const,
       address: '0x1234567890abcdef',
+      wallet_client: 'privy' as const,
+      id: 'id2tptkqrxd39qo9j423etij',
     },
   ],
   created_at: Date.now(),
 };
 
 export const mockWallet = {
-  id: 'wallet_456',
+  id: 'id2tptkqrxd39qo9j423etij',
   address: '0x1234567890abcdef',
   chain_type: 'ethereum',
 };

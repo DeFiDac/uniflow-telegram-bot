@@ -54,7 +54,20 @@ export async function handleConnect(
 		// Create a wallet with bot as additional signer (agentic signer)
 		let walletId: string;
 		const existingWallet = privyUser.linked_accounts.find(acc => acc.type === 'wallet');
-		if (!existingWallet) {
+
+		// Check if existing wallet is an embedded wallet with an ID
+		const hasEmbeddedWalletId = existingWallet &&
+			'wallet_client' in existingWallet &&
+			existingWallet.wallet_client === 'privy' &&
+			'id' in existingWallet &&
+			typeof existingWallet.id === 'string';
+
+		if (hasEmbeddedWalletId) {
+			// Use the existing embedded wallet ID
+			walletId = (existingWallet as any).id;
+			console.log(`[/connect] Using existing embedded wallet ID: ${walletId}`);
+		} else {
+			// Create a new wallet for this user
 			console.log(`[/connect] Creating new wallet for user ${privyUser.id}`);
 
 			const signerId = process.env.PRIVY_SIGNER_ID;
@@ -74,10 +87,16 @@ export async function handleConnect(
 			});
 			walletId = wallet.id;
 			console.log(`[/connect] Created wallet: ${walletId}`);
-		} else {
-			// For existing wallets from linked_accounts, use address as identifier
-			walletId = existingWallet.address;
-			console.log(`[/connect] Using existing wallet: ${walletId}`);
+		}
+
+		// Validate walletId was obtained
+		if (!walletId) {
+			throw new Error('Failed to obtain wallet ID');
+		}
+
+		// Validate walletId format (should be lowercase alphanumeric)
+		if (!/^[a-z0-9]+$/.test(walletId)) {
+			console.warn(`[/connect] Warning: walletId may be in wrong format: ${walletId}`);
 		}
 
 		// Store in session

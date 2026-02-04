@@ -5,6 +5,7 @@ export const createMockPrivyClient = () => {
   const mockGetByTelegramUserID = vi.fn();
   const mockCreate = vi.fn();
   const mockWalletCreate = vi.fn();
+  const mockWalletList = vi.fn();
   const mockSendTransaction = vi.fn();
 
   const mockEthereum = vi.fn(() => ({
@@ -13,6 +14,7 @@ export const createMockPrivyClient = () => {
 
   const mockWallets = vi.fn(() => ({
     create: mockWalletCreate,
+    list: mockWalletList,
     ethereum: mockEthereum,
   }));
 
