@@ -1,6 +1,23 @@
 require('dotenv').config();
 import TelegramBot from 'node-telegram-bot-api';
 import { PrivyClient } from '@privy-io/node';
+// Validate critical environment variables
+const requiredEnvVars = [
+	'TELEGRAM_TOKEN',
+	'PRIVY_APP_ID',
+	'PRIVY_APP_SECRET',
+	'PRIVY_SIGNER_ID',
+];
+
+for (const envVar of requiredEnvVars) {
+	if (!process.env[envVar]) {
+		console.error(`❌ Missing required environment variable: ${envVar}`);
+		process.exit(1);
+	}
+}
+
+console.log('✅ Environment variables validated');
+console.log('🤖 UniFlow Bot starting...');
 
 const token = process.env.TELEGRAM_TOKEN ?? '';
 const bot = new TelegramBot(token, { polling: true });
