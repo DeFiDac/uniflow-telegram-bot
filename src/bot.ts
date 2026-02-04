@@ -13,6 +13,18 @@ const privy = new PrivyClient({
 // TODO: upgrade to DB for persistence
 const sessions = new Map();
 
+// Constants
+const RESPONSE_TIMEOUT = 60000; // 60 seconds for user responses
+
+// Global error handler
+bot.on('error', (error) => {
+	console.error('[Bot Error]', error);
+});
+
+bot.on('polling_error', (error) => {
+	console.error('[Polling Error]', error);
+});
+
 // Connect command
 bot.onText(/\/connect/, async (msg) => {
 	try {
@@ -211,5 +223,20 @@ bot.onText(/\/transact/, async (msg) => {
 
 // TODO: create /analyze command to do chain queries and create a summary to be fed into the agent
 // TODO: create /opportunities to call specific skills and suggest potential LPs/new tokens
+
+// Startup validation
+(() => {
+	const requiredEnvVars = ['TELEGRAM_TOKEN', 'PRIVY_APP_ID', 'PRIVY_APP_SECRET', 'PRIVY_SIGNER_ID'];
+	const missing = requiredEnvVars.filter(v => !process.env[v]);
+
+	if (missing.length > 0) {
+		console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
+		console.error('Please check your .env file and ensure all required variables are set.');
+		process.exit(1);
+	}
+
+	console.log('✅ Bot started successfully');
+	console.log('📱 Listening for commands: /connect, /transact');
+})();
 
 
