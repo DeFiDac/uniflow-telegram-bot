@@ -56,12 +56,18 @@ export async function handleConnect(
 		const existingWallet = privyUser.linked_accounts.find(acc => acc.type === 'wallet');
 		if (!existingWallet) {
 			console.log(`[/connect] Creating new wallet for user ${privyUser.id}`);
+
+			const signerId = process.env.PRIVY_SIGNER_ID;
+			if (!signerId) {
+				throw new Error('PRIVY_SIGNER_ID environment variable is not configured');
+			}
+
 			const wallet = await privy.wallets().create({
 				chain_type: 'ethereum',
 				owner: { user_id: privyUser.id },
 				additional_signers: [
 					{
-						signer_id: process.env.PRIVY_SIGNER_ID ?? "",
+						signer_id: signerId,
 						override_policy_ids: []
 					}
 				]
