@@ -1,8 +1,8 @@
 export const RESPONSE_TIMEOUT = 60000;
 
 export const ERROR_MESSAGES = {
-	MISSING_FROM: '[/{{command}}] Missing msg.from',
-	MISSING_CHAT_ID: '[/{{command}}] Missing chat ID',
+	MISSING_FROM: 'Missing msg.from',
+	MISSING_CHAT_ID: 'Missing chat ID',
 	NO_SESSION: '❌ Please connect your wallet first with /connect!',
 	CONNECTION_FAILED:
 		'❌ Connection failed. Please try again later.\n\nIf the problem persists, please contact support.',
