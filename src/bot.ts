@@ -1,6 +1,8 @@
 require('dotenv').config();
 import TelegramBot from 'node-telegram-bot-api';
 import { PrivyClient } from '@privy-io/node';
+import { startHealthServer } from './health';
+
 // Validate critical environment variables
 const requiredEnvVars = [
 	'TELEGRAM_TOKEN',
@@ -29,6 +31,9 @@ const privy = new PrivyClient({
 // In-memory session storage (Map for user data)
 // TODO: upgrade to DB for persistence
 const sessions = new Map();
+
+// Start health check server
+const healthServer = startHealthServer();
 
 // Connect command
 bot.onText(/\/connect/, async (msg) => {
