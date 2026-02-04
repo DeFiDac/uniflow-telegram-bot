@@ -19,7 +19,7 @@ Current test coverage metrics:
 
 ### Source Code Organization
 
-```
+```text
 src/
 ├── commands/
 │   ├── connect.ts       # /connect command handler
