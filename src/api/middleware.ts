@@ -54,10 +54,10 @@ export function validateTxParams(req: Request, res: Response, next: NextFunction
     return;
   }
 
-  if (value === undefined || value === null) {
+  if (value === undefined || value === null || typeof value !== 'string') {
     const response: ApiResponse = {
       success: false,
-      message: 'txParams.value is required',
+      message: 'txParams.value is required and must be a string (hex or decimal)',
       error: ErrorCodes.INVALID_REQUEST,
     };
     res.status(400).json(response);
@@ -88,12 +88,46 @@ export function errorHandler(
 }
 
 /**
+ * Sanitization helper for logs
+ */
+const SENSITIVE_KEYS = [
+  'userId', 'password', 'token', 'secret', 'key',
+  'mnemonic', 'privateKey', 'cardNumber', 'account',
+  'ssn', 'transactionAmount', 'value'
+];
+
+function sanitizeData(data: any): any {
+  if (!data) return data;
+  if (typeof data !== 'object') return data;
+
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeData(item));
+  }
+
+  const sanitized: any = { ...data };
+
+  for (const key of Object.keys(sanitized)) {
+    // Redact if key matches sensitive list (case-insensitive partial match)
+    if (SENSITIVE_KEYS.some(k => key.toLowerCase().includes(k.toLowerCase()))) {
+      sanitized[key] = '[REDACTED]';
+    } else if (typeof sanitized[key] === 'object') {
+      sanitized[key] = sanitizeData(sanitized[key]);
+    }
+  }
+
+  return sanitized;
+}
+
+/**
  * Request logging middleware
  */
 export function requestLogger(req: Request, _res: Response, next: NextFunction): void {
+  const sanitizedBody = sanitizeData(req.body);
+  const sanitizedParams = sanitizeData(req.params);
+
   console.log(`[API] ${req.method} ${req.path}`, {
-    body: req.body,
-    params: req.params,
+    body: sanitizedBody,
+    params: sanitizedParams,
   });
   next();
 }

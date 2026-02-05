@@ -10,6 +10,7 @@ import {
   WalletConnectResult,
   WalletTransactResult,
   ErrorCodes,
+  IdType,
 } from './types';
 
 export class WalletService {
@@ -24,33 +25,73 @@ export class WalletService {
   /**
    * Connect a user's wallet. Creates a new Privy user and wallet if needed.
    * @param externalUserId - External user identifier (e.g., Telegram user ID, session UUID)
+   * @param idType - Type of the identifier (default: 'telegram')
    */
-  async connect(externalUserId: string): Promise<WalletConnectResult> {
+  async connect(externalUserId: string, idType: IdType = 'telegram'): Promise<WalletConnectResult> {
     try {
-      console.log(`[WalletService] Connecting wallet for user: ${externalUserId}`);
+      console.log(`[WalletService] Connecting wallet for user: ${externalUserId} type: ${idType}`);
 
       let privyUser;
       let isNewUser = false;
 
       try {
         // Check if a Privy user exists with this external user ID
-        // We use Telegram user ID lookup first for backwards compatibility
-        privyUser = await this.privy.users().getByTelegramUserID({
-          telegram_user_id: externalUserId,
-        });
+        switch (idType) {
+          case 'telegram':
+            privyUser = await this.privy.users().getByTelegramUserID({
+              telegram_user_id: externalUserId,
+            });
+            break;
+          case 'email':
+            privyUser = await this.privy.users().getByEmailAddress({
+              address: externalUserId,
+            });
+            break;
+          case 'wallet':
+            privyUser = await this.privy.users().getByWalletAddress({
+              address: externalUserId,
+            });
+            break;
+          case 'custom_auth':
+            privyUser = await this.privy.users().getByCustomAuthID({
+              custom_user_id: externalUserId,
+            });
+            break;
+          default:
+            throw new Error(`Unsupported idType: ${idType}`);
+        }
+
         console.log(`[WalletService] Found existing Privy user: ${privyUser.id}`);
       } catch (error) {
         if (error instanceof APIError && error.status === 404) {
           // Create new user
-          console.log(`[WalletService] Creating new Privy user for ${externalUserId}`);
+          console.log(`[WalletService] Creating new Privy user for ${externalUserId} (${idType})`);
           isNewUser = true;
+
+          let linkedAccount: any;
+          switch (idType) {
+            case 'telegram':
+              linkedAccount = { type: 'telegram', telegram_user_id: externalUserId };
+              break;
+            case 'email':
+              linkedAccount = { type: 'email', address: externalUserId };
+              break;
+            case 'wallet':
+              // Wallet creation typically implies importing a wallet or using a wallet to login.
+              // Creating a *user* via wallet address usually means importing that wallet.
+              linkedAccount = { type: 'wallet', address: externalUserId, chain_type: 'ethereum' };
+              break;
+            case 'custom_auth':
+              linkedAccount = { type: 'custom_auth', custom_user_id: externalUserId };
+              break;
+          }
+
+          if (!linkedAccount) {
+            throw new Error(`Cannot create user with unsupported idType: ${idType}`);
+          }
+
           privyUser = await this.privy.users().create({
-            linked_accounts: [
-              {
-                type: 'telegram',
-                telegram_user_id: externalUserId,
-              },
-            ],
+            linked_accounts: [linkedAccount],
           });
           console.log(`[WalletService] Created new Privy user: ${privyUser.id}`);
         } else {

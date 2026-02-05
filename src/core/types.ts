@@ -8,6 +8,9 @@ export interface SessionData {
 	walletId: string; // Privy wallet ID
 }
 
+// User Identity Types
+export type IdType = 'telegram' | 'email' | 'wallet' | 'custom_auth';
+
 // Transaction parameters
 export interface TxParams {
 	to: string;

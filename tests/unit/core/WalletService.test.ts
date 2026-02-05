@@ -10,6 +10,9 @@ import { APIError } from '@privy-io/node';
 // Mock Privy client
 const createMockPrivyClient = () => {
   const mockGetByTelegramUserID = vi.fn();
+  const mockGetByEmailAddress = vi.fn();
+  const mockGetByWalletAddress = vi.fn();
+  const mockGetByCustomAuthID = vi.fn();
   const mockCreateUser = vi.fn();
   const mockCreateWallet = vi.fn();
   const mockSendTransaction = vi.fn();
@@ -17,6 +20,9 @@ const createMockPrivyClient = () => {
   return {
     users: vi.fn(() => ({
       getByTelegramUserID: mockGetByTelegramUserID,
+      getByEmailAddress: mockGetByEmailAddress,
+      getByWalletAddress: mockGetByWalletAddress,
+      getByCustomAuthID: mockGetByCustomAuthID,
       create: mockCreateUser,
     })),
     wallets: vi.fn(() => ({
@@ -27,6 +33,9 @@ const createMockPrivyClient = () => {
     })),
     _mocks: {
       getByTelegramUserID: mockGetByTelegramUserID,
+      getByEmailAddress: mockGetByEmailAddress,
+      getByWalletAddress: mockGetByWalletAddress,
+      getByCustomAuthID: mockGetByCustomAuthID,
       createUser: mockCreateUser,
       createWallet: mockCreateWallet,
       sendTransaction: mockSendTransaction,
@@ -48,7 +57,64 @@ describe('WalletService', () => {
   });
 
   describe('connect', () => {
-    it('should create new user and wallet for new user', async () => {
+    it('should connect using Telegram ID (default)', async () => {
+      mockPrivy._mocks.getByTelegramUserID.mockResolvedValue({
+        id: 'privy-user-tg',
+        linked_accounts: [{ type: 'wallet', wallet_client: 'privy', id: 'wallet-tg' }],
+      });
+
+      const result = await walletService.connect('123456');
+
+      expect(mockPrivy._mocks.getByTelegramUserID).toHaveBeenCalledWith({ telegram_user_id: '123456' });
+      expect(result.success).toBe(true);
+      expect(result.walletId).toBe('wallet-tg');
+    });
+
+    it('should connect using Email', async () => {
+      mockPrivy._mocks.getByEmailAddress.mockResolvedValue({
+        id: 'privy-user-email',
+        linked_accounts: [{ type: 'wallet', wallet_client: 'privy', id: 'wallet-email' }],
+      });
+
+      const result = await walletService.connect('test@example.com', 'email');
+
+      expect(mockPrivy._mocks.getByEmailAddress).toHaveBeenCalledWith({ address: 'test@example.com' });
+      expect(result.success).toBe(true);
+      expect(result.walletId).toBe('wallet-email');
+    });
+
+    it('should connect using Wallet Address', async () => {
+      mockPrivy._mocks.getByWalletAddress.mockResolvedValue({
+        id: 'privy-user-wallet',
+        linked_accounts: [{ type: 'wallet', wallet_client: 'privy', id: 'wallet-wallet' }],
+      });
+
+      const result = await walletService.connect('0x123', 'wallet');
+
+      expect(mockPrivy._mocks.getByWalletAddress).toHaveBeenCalledWith({ address: '0x123' });
+      expect(result.success).toBe(true);
+    });
+
+    it('should create new user with Email if not found', async () => {
+      const apiError = Object.create(APIError.prototype);
+      Object.assign(apiError, { status: 404, message: 'Not found' });
+      mockPrivy._mocks.getByEmailAddress.mockRejectedValue(apiError);
+
+      mockPrivy._mocks.createUser.mockResolvedValue({
+        id: 'new-user-email',
+        linked_accounts: [],
+      });
+      mockPrivy._mocks.createWallet.mockResolvedValue({ id: 'new-wallet-email' });
+
+      const result = await walletService.connect('new@example.com', 'email');
+
+      expect(mockPrivy._mocks.createUser).toHaveBeenCalledWith({
+        linked_accounts: [{ type: 'email', address: 'new@example.com' }],
+      });
+      expect(result.isNewUser).toBe(true);
+    });
+
+    it('should create new user and wallet for new user (Telegram)', async () => {
       // User doesn't exist - create proper APIError
       const apiError = Object.create(APIError.prototype);
       Object.assign(apiError, { status: 404, message: 'Not found' });
@@ -73,7 +139,7 @@ describe('WalletService', () => {
       expect(result.isNewUser).toBe(true);
     });
 
-    it('should use existing wallet for returning user', async () => {
+    it('should use existing wallet for returning user (Telegram)', async () => {
       // User exists with wallet
       mockPrivy._mocks.getByTelegramUserID.mockResolvedValue({
         id: 'privy-user-123',
