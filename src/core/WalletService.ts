@@ -150,6 +150,13 @@ export class WalletService {
 
       console.log(`[WalletService] Sending transaction on ${caip2} for wallet ${session.walletId}`);
 
+      // Convert value to hex if it's not already
+      let hexValue = txParams.value;
+      if (!hexValue.startsWith('0x')) {
+        // Convert decimal string to hex
+        hexValue = '0x' + BigInt(hexValue).toString(16);
+      }
+
       const txResponse = await this.privy
         .wallets()
         .ethereum()
@@ -158,7 +165,7 @@ export class WalletService {
           params: {
             transaction: {
               to: txParams.to,
-              value: txParams.value,
+              value: hexValue,
               data: txParams.data || '0x',
             },
           },
