@@ -36,7 +36,9 @@ export class PriceService {
 			console.warn(
 				'[PriceService] No API key - returning zero prices for all tokens'
 			);
-			addresses.forEach((addr) => result.set(addr.toLowerCase(), 0));
+			addresses.forEach((addr) => {
+				result.set(addr.toLowerCase(), 0);
+			});
 			return result;
 		}
 
@@ -76,62 +78,123 @@ export class PriceService {
 			};
 
 			const platform = platformMap[chainId] || 'ethereum';
-			const addressParam = uncachedAddresses.join(',');
 
-			const response = await axios.get(
-				`${this.CMC_API_BASE}/v2/cryptocurrency/quotes/latest`,
-				{
-					params: {
-						address: addressParam,
-						convert: 'USD',
-						aux: 'platform',
-					},
-					headers: {
-						'X-CMC_PRO_API_KEY': this.apiKey,
-					},
-					timeout: 10000, // 10 second timeout
-				}
-			);
+			// Step 1: Resolve contract addresses to CoinMarketCap IDs
+			const addressToCmcId = new Map<string, number>();
+			const cmcIdToAddress = new Map<number, string>();
 
-			// Parse response and update cache
-			if (response.data && response.data.data) {
-				const data = response.data.data;
+			for (const address of uncachedAddresses) {
+				try {
+					const infoResponse = await axios.get(
+						`${this.CMC_API_BASE}/v2/cryptocurrency/info`,
+						{
+							params: {
+								address: address,
+							},
+							headers: {
+								'X-CMC_PRO_API_KEY': this.apiKey,
+							},
+							timeout: 10000,
+						}
+					);
 
-				for (const address of uncachedAddresses) {
-					// CMC returns data keyed by address
-					const tokenData = data[address];
+					if (infoResponse.data && infoResponse.data.data) {
+						const data = infoResponse.data.data;
+						// CMC returns data keyed by address
+						const tokenInfo = data[address];
 
-					if (tokenData && tokenData.quote && tokenData.quote.USD) {
-						const priceUsd = tokenData.quote.USD.price;
-						const symbol = tokenData.symbol || 'UNKNOWN';
-
-						// Update cache
-						this.priceCache.set(address, {
-							address,
-							symbol,
-							priceUsd,
-							timestamp: Date.now(),
-						});
-
-						// Add to result
-						result.set(address, priceUsd);
-
-						console.log(
-							`[PriceService] Fetched ${symbol} (${address}): $${priceUsd.toFixed(2)}`
-						);
-					} else {
-						console.warn(
-							`[PriceService] No price data for ${address} - setting to 0`
-						);
-						result.set(address, 0);
+						if (tokenInfo && tokenInfo.id) {
+							const cmcId = tokenInfo.id;
+							addressToCmcId.set(address, cmcId);
+							cmcIdToAddress.set(cmcId, address);
+							console.log(
+								`[PriceService] Resolved ${address} -> CMC ID ${cmcId}`
+							);
+						} else {
+							console.warn(
+								`[PriceService] No CMC ID found for ${address}`
+							);
+						}
 					}
+				} catch (error) {
+					console.warn(
+						`[PriceService] Failed to resolve CMC ID for ${address}:`,
+						error
+					);
+				}
+			}
+
+			// Step 2: Fetch prices for all resolved CMC IDs
+			if (addressToCmcId.size > 0) {
+				const cmcIds = Array.from(addressToCmcId.values());
+				const uniqueCmcIds = [...new Set(cmcIds)]; // Dedupe
+				const idsParam = uniqueCmcIds.join(',');
+
+				const quotesResponse = await axios.get(
+					`${this.CMC_API_BASE}/v2/cryptocurrency/quotes/latest`,
+					{
+						params: {
+							id: idsParam,
+							convert: 'USD',
+						},
+						headers: {
+							'X-CMC_PRO_API_KEY': this.apiKey,
+						},
+						timeout: 10000,
+					}
+				);
+
+				if (quotesResponse.data && quotesResponse.data.data) {
+					const data = quotesResponse.data.data;
+
+					// Map prices back to addresses
+					for (const [address, cmcId] of addressToCmcId.entries()) {
+						const tokenData = data[cmcId];
+
+						if (tokenData && tokenData.quote && tokenData.quote.USD) {
+							const priceUsd = tokenData.quote.USD.price;
+							const symbol = tokenData.symbol || 'UNKNOWN';
+
+							// Update cache
+							this.priceCache.set(address, {
+								address,
+								symbol,
+								priceUsd,
+								timestamp: Date.now(),
+							});
+
+							// Add to result
+							result.set(address, priceUsd);
+
+							console.log(
+								`[PriceService] Fetched ${symbol} (${address}): $${priceUsd.toFixed(2)}`
+							);
+						} else {
+							console.warn(
+								`[PriceService] No price data for CMC ID ${cmcId} (${address})`
+							);
+							result.set(address, 0);
+						}
+					}
+				}
+			}
+
+			// Set 0 for any addresses that couldn't be resolved
+			for (const address of uncachedAddresses) {
+				if (!result.has(address)) {
+					console.warn(
+						`[PriceService] Could not fetch price for ${address} - setting to 0`
+					);
+					result.set(address, 0);
 				}
 			}
 		} catch (error) {
 			console.error('[PriceService] Failed to fetch prices:', error);
 
 			// On error, return 0 for uncached addresses
-			uncachedAddresses.forEach((addr) => result.set(addr, 0));
+			uncachedAddresses.forEach((addr) => {
+				result.set(addr, 0);
+			});
 		}
 
 		return result;
