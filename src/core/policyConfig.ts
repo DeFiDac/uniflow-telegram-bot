@@ -1,3 +1,4 @@
+import { getAddress } from 'viem';
 import { UNISWAP_V4_DEPLOYMENTS } from '../constants';
 import { PolicyRule, PolicyCondition } from './types';
 
@@ -18,12 +19,13 @@ export class PolicyConfig {
 
 	/**
 	 * Generate contract allowlist condition - only allow Uniswap V4 contracts
+	 * Uses EIP-55 checksummed addresses for case-sensitive matching
 	 */
 	static getContractAllowlistCondition(): PolicyCondition {
 		const allowedContracts = Object.values(UNISWAP_V4_DEPLOYMENTS).flatMap((deployment) => [
-			deployment.poolManager.toLowerCase(),
-			deployment.positionManager.toLowerCase(),
-			deployment.stateView.toLowerCase(),
+			getAddress(deployment.poolManager),
+			getAddress(deployment.positionManager),
+			getAddress(deployment.stateView),
 		]);
 
 		return {

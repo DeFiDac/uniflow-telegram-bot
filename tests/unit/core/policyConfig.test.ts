@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { getAddress } from 'viem';
 import { PolicyConfig } from '../../../src/core/policyConfig';
 import { UNISWAP_V4_DEPLOYMENTS } from '../../../src/constants';
 
@@ -25,20 +26,23 @@ describe('PolicyConfig', () => {
 			const condition = PolicyConfig.getContractAllowlistCondition();
 			const allowedAddresses = condition.value as string[];
 
-			// Verify each network's contracts are included
+			// Verify each network's contracts are included (using checksummed addresses)
 			Object.values(UNISWAP_V4_DEPLOYMENTS).forEach((deployment) => {
-				expect(allowedAddresses).toContain(deployment.poolManager.toLowerCase());
-				expect(allowedAddresses).toContain(deployment.positionManager.toLowerCase());
-				expect(allowedAddresses).toContain(deployment.stateView.toLowerCase());
+				expect(allowedAddresses).toContain(getAddress(deployment.poolManager));
+				expect(allowedAddresses).toContain(getAddress(deployment.positionManager));
+				expect(allowedAddresses).toContain(getAddress(deployment.stateView));
 			});
 		});
 
-		it('should use lowercase addresses', () => {
+		it('should use EIP-55 checksummed addresses', () => {
 			const condition = PolicyConfig.getContractAllowlistCondition();
 			const allowedAddresses = condition.value as string[];
 
 			allowedAddresses.forEach((addr) => {
-				expect(addr).toBe(addr.toLowerCase());
+				// Verify address is checksummed by comparing with viem's getAddress output
+				expect(addr).toBe(getAddress(addr));
+				// Checksummed addresses should NOT be all lowercase
+				expect(addr).not.toBe(addr.toLowerCase());
 			});
 		});
 	});
