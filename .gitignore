@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-# pnpm-lock.yaml should be committed for reproducible builds
 
 # Build outputs
 dist/
