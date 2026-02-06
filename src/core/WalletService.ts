@@ -12,6 +12,7 @@ import {
   WalletDisconnectResult,
   ErrorCodes,
   IdType,
+  AuthorizationContext,
 } from './types';
 
 export class WalletService {
@@ -204,6 +205,23 @@ export class WalletService {
         hexValue = '0x' + BigInt(hexValue).toString(16);
       }
 
+      // Get the authorization private key
+      const authPrivateKey = process.env.PRIVY_SIGNER_PRIVATE_KEY;
+      if (!authPrivateKey) {
+        console.error('[WalletService] PRIVY_SIGNER_PRIVATE_KEY is not configured');
+        return {
+          success: false,
+          error: 'Server signing configuration is missing',
+        };
+      }
+
+      // Build authorization context
+      const authorizationContext: AuthorizationContext = {
+        authorization_private_keys: [authPrivateKey],
+      };
+
+      console.log('[WalletService] Authorization context initialized for server signing');
+
       const txResponse = await this.privy
         .wallets()
         .ethereum()
@@ -216,6 +234,7 @@ export class WalletService {
               data: txParams.data || '0x',
             },
           },
+          authorization_context: authorizationContext,
         });
 
       console.log(`[WalletService] Transaction successful: ${txResponse.hash}`);

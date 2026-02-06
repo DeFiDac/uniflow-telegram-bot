@@ -20,6 +20,11 @@ export interface TxParams {
 	chainId?: number; // Default to Ethereum mainnet
 }
 
+// Authorization context for server-side signing
+export interface AuthorizationContext {
+	authorization_private_keys: string[];
+}
+
 // API Response types
 export interface ApiResponse<T = unknown> {
 	success: boolean;

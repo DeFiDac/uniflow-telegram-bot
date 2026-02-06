@@ -52,8 +52,9 @@ describe('WalletService', () => {
     mockPrivy = createMockPrivyClient();
     walletService = new WalletService(mockPrivy as any);
 
-    // Set required env var
+    // Set required env vars
     process.env.PRIVY_SIGNER_ID = 'test-signer-id';
+    process.env.PRIVY_SIGNER_PRIVATE_KEY = 'test-auth-key-12345';
   });
 
   describe('connect', () => {
@@ -207,6 +208,43 @@ describe('WalletService', () => {
 
       expect(result.success).toBe(true);
       expect(result.hash).toBe('0xtxhash123');
+
+      // Verify authorization_context is passed
+      expect(mockPrivy._mocks.sendTransaction).toHaveBeenCalledWith(
+        'wallet-abc123',
+        expect.objectContaining({
+          authorization_context: {
+            authorization_private_keys: ['test-auth-key-12345'],
+          },
+        })
+      );
+    });
+
+    it('should return error if PRIVY_SIGNER_PRIVATE_KEY is missing', async () => {
+      // First connect the user
+      mockPrivy._mocks.getByTelegramUserID.mockResolvedValue({
+        id: 'privy-user-123',
+        linked_accounts: [
+          {
+            type: 'wallet',
+            wallet_client: 'privy',
+            id: 'wallet-abc123',
+            address: '0xTransactAddress',
+          },
+        ],
+      });
+      await walletService.connect('telegram_123');
+
+      // Remove private key from env
+      delete process.env.PRIVY_SIGNER_PRIVATE_KEY;
+
+      const result = await walletService.transact('telegram_123', {
+        to: '0xrecipient',
+        value: '1000000000000000000',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Server signing configuration is missing');
     });
   });
 

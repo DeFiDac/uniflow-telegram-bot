@@ -112,6 +112,7 @@ Check if user has an active session.
 | `PRIVY_APP_ID` | ✅ | Privy application ID |
 | `PRIVY_APP_SECRET` | ✅ | Privy application secret |
 | `PRIVY_SIGNER_ID` | ✅ | Privy signer ID for agentic transactions |
+| `PRIVY_SIGNER_PRIVATE_KEY` | ✅ | Privy authorization private key for server-side signing |
 | `PORT` | ❌ | HTTP server port (default: 3000) |
 
 ## Running
@@ -140,6 +141,15 @@ pnpm test:watch
 # Generate coverage report
 pnpm test:coverage
 ```
+
+## Server-Side Transaction Signing
+
+UniFlow uses Privy's authorization keys to enable server-side transaction signing. The server constructs an authorization context using `PRIVY_SIGNER_PRIVATE_KEY` and passes it to Privy's sendTransaction method, allowing automatic transaction signing without user interaction.
+
+### Security Notes
+- Keep `PRIVY_SIGNER_PRIVATE_KEY` secure - never expose to clients
+- Use only in trusted server environments
+- Implement proper authentication on `/api/transact` in production
 
 ## Error Codes
 

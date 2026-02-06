@@ -11,7 +11,7 @@ import { WalletService } from './core';
 import { createRouter, errorHandler, requestLogger } from './api';
 
 // Validate critical environment variables
-const requiredEnvVars = ['PRIVY_APP_ID', 'PRIVY_APP_SECRET', 'PRIVY_SIGNER_ID'];
+const requiredEnvVars = ['PRIVY_APP_ID', 'PRIVY_APP_SECRET', 'PRIVY_SIGNER_ID', 'PRIVY_SIGNER_PRIVATE_KEY'];
 
 for (const envVar of requiredEnvVars) {
   if (!process.env[envVar]) {
