@@ -50,7 +50,7 @@ describe('WalletService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPrivy = createMockPrivyClient();
-    walletService = new WalletService(mockPrivy as any);
+    walletService = new WalletService(mockPrivy as any, undefined, ['test-policy-id-123']);
 
     // Set required env vars
     process.env.PRIVY_SIGNER_ID = 'test-signer-id';
@@ -144,6 +144,37 @@ describe('WalletService', () => {
       expect(result.walletAddress).toBe('0xABC123Address');
       expect(result.privyUserId).toBe('privy-user-123');
       expect(result.isNewUser).toBe(true);
+    });
+
+    it('should create wallet with security policies', async () => {
+      // Create proper APIError
+      const apiError = Object.create(APIError.prototype);
+      Object.assign(apiError, { status: 404, message: 'Not found' });
+      mockPrivy._mocks.getByTelegramUserID.mockRejectedValue(apiError);
+
+      mockPrivy._mocks.createUser.mockResolvedValue({
+        id: 'privy-user-123',
+        linked_accounts: [],
+      });
+
+      mockPrivy._mocks.createWallet.mockResolvedValue({
+        id: 'wallet-abc123',
+        address: '0xABC123Address',
+      });
+
+      await walletService.connect('telegram_123');
+
+      // Verify policy IDs are passed to wallet creation
+      expect(mockPrivy._mocks.createWallet).toHaveBeenCalledWith({
+        chain_type: 'ethereum',
+        owner: { user_id: 'privy-user-123' },
+        additional_signers: [
+          {
+            signer_id: 'test-signer-id',
+            override_policy_ids: ['test-policy-id-123'],
+          },
+        ],
+      });
     });
 
     it('should use existing wallet for returning user (Telegram)', async () => {
