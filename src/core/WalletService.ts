@@ -9,6 +9,7 @@ import {
   TxParams,
   WalletConnectResult,
   WalletTransactResult,
+  WalletDisconnectResult,
   ErrorCodes,
   IdType,
 } from './types';
@@ -108,6 +109,7 @@ export class WalletService {
 
       // Find or create wallet
       let walletId: string;
+      let walletAddress: string;
       const existingWallet = privyUser.linked_accounts.find((acc) => acc.type === 'wallet');
 
       const hasEmbeddedWalletId =
@@ -118,8 +120,9 @@ export class WalletService {
         typeof existingWallet.id === 'string';
 
       if (hasEmbeddedWalletId) {
-        walletId = (existingWallet as { id: string }).id;
-        console.log(`[WalletService] Using existing embedded wallet: ${walletId}`);
+        walletId = (existingWallet as { id: string; address: string }).id;
+        walletAddress = (existingWallet as { id: string; address: string }).address;
+        console.log(`[WalletService] Using existing embedded wallet: ${walletId} (${walletAddress})`);
       } else {
         // Create new wallet with agentic signer
         console.log(`[WalletService] Creating new wallet for user ${privyUser.id}`);
@@ -143,18 +146,21 @@ export class WalletService {
           ],
         });
         walletId = wallet.id;
-        console.log(`[WalletService] Created wallet: ${walletId}`);
+        walletAddress = wallet.address;
+        console.log(`[WalletService] Created wallet: ${walletId} (${walletAddress})`);
       }
 
       // Store session
       this.sessions.set(externalUserId, {
         userId: privyUser.id,
         walletId,
+        walletAddress,
       });
 
       return {
         success: true,
         walletId,
+        walletAddress,
         privyUserId: privyUser.id,
         isNewUser,
       };
@@ -231,11 +237,20 @@ export class WalletService {
    * Disconnect a user's session
    * @param externalUserId - External user identifier
    */
-  disconnect(externalUserId: string): boolean {
+  disconnect(externalUserId: string): WalletDisconnectResult {
     console.log(`[WalletService] Disconnecting user: ${externalUserId}`);
-    const hadSession = this.sessions.has(externalUserId);
-    this.sessions.delete(externalUserId);
-    return hadSession;
+    const session = this.sessions.get(externalUserId);
+
+    if (session) {
+      this.sessions.delete(externalUserId);
+      return {
+        success: true,
+        walletId: session.walletId,
+        walletAddress: session.walletAddress,
+      };
+    }
+
+    return { success: false };
   }
 
   /**

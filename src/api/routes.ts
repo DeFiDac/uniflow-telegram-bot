@@ -25,11 +25,12 @@ export function createRouter(walletService: WalletService): Router {
 
     const result = await walletService.connect(userId);
 
-    if (result.success && result.walletId) {
+    if (result.success && result.walletId && result.walletAddress) {
       const response: ApiResponse<ConnectResponseData> = {
         success: true,
         data: {
           walletId: result.walletId,
+          walletAddress: result.walletAddress,
           privyUserId: result.privyUserId!,
           isNewUser: result.isNewUser || false,
         },
@@ -93,11 +94,15 @@ export function createRouter(walletService: WalletService): Router {
   router.post('/disconnect', validateUserId, (req: Request, res: Response) => {
     const { userId } = req.body;
 
-    const hadSession = walletService.disconnect(userId);
+    const result = walletService.disconnect(userId);
 
-    if (hadSession) {
-      const response: ApiResponse = {
+    if (result.success) {
+      const response: ApiResponse<{ walletId?: string; walletAddress?: string }> = {
         success: true,
+        data: {
+          walletId: result.walletId,
+          walletAddress: result.walletAddress,
+        },
         message: 'Disconnected successfully',
       };
       res.status(200).json(response);
@@ -134,6 +139,7 @@ export function createRouter(walletService: WalletService): Router {
       data: {
         hasSession: !!session,
         walletId: session?.walletId,
+        walletAddress: session?.walletAddress,
       },
       message: session ? 'Session found' : 'No active session',
     };

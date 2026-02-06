@@ -60,7 +60,7 @@ describe('WalletService', () => {
     it('should connect using Telegram ID (default)', async () => {
       mockPrivy._mocks.getByTelegramUserID.mockResolvedValue({
         id: 'privy-user-tg',
-        linked_accounts: [{ type: 'wallet', wallet_client: 'privy', id: 'wallet-tg' }],
+        linked_accounts: [{ type: 'wallet', wallet_client: 'privy', id: 'wallet-tg', address: '0xTelegramAddress' }],
       });
 
       const result = await walletService.connect('123456');
@@ -68,12 +68,13 @@ describe('WalletService', () => {
       expect(mockPrivy._mocks.getByTelegramUserID).toHaveBeenCalledWith({ telegram_user_id: '123456' });
       expect(result.success).toBe(true);
       expect(result.walletId).toBe('wallet-tg');
+      expect(result.walletAddress).toBe('0xTelegramAddress');
     });
 
     it('should connect using Email', async () => {
       mockPrivy._mocks.getByEmailAddress.mockResolvedValue({
         id: 'privy-user-email',
-        linked_accounts: [{ type: 'wallet', wallet_client: 'privy', id: 'wallet-email' }],
+        linked_accounts: [{ type: 'wallet', wallet_client: 'privy', id: 'wallet-email', address: '0xEmailAddress' }],
       });
 
       const result = await walletService.connect('test@example.com', 'email');
@@ -81,18 +82,20 @@ describe('WalletService', () => {
       expect(mockPrivy._mocks.getByEmailAddress).toHaveBeenCalledWith({ address: 'test@example.com' });
       expect(result.success).toBe(true);
       expect(result.walletId).toBe('wallet-email');
+      expect(result.walletAddress).toBe('0xEmailAddress');
     });
 
     it('should connect using Wallet Address', async () => {
       mockPrivy._mocks.getByWalletAddress.mockResolvedValue({
         id: 'privy-user-wallet',
-        linked_accounts: [{ type: 'wallet', wallet_client: 'privy', id: 'wallet-wallet' }],
+        linked_accounts: [{ type: 'wallet', wallet_client: 'privy', id: 'wallet-wallet', address: '0x123' }],
       });
 
       const result = await walletService.connect('0x123', 'wallet');
 
       expect(mockPrivy._mocks.getByWalletAddress).toHaveBeenCalledWith({ address: '0x123' });
       expect(result.success).toBe(true);
+      expect(result.walletAddress).toBe('0x123');
     });
 
     it('should create new user with Email if not found', async () => {
@@ -104,7 +107,7 @@ describe('WalletService', () => {
         id: 'new-user-email',
         linked_accounts: [],
       });
-      mockPrivy._mocks.createWallet.mockResolvedValue({ id: 'new-wallet-email' });
+      mockPrivy._mocks.createWallet.mockResolvedValue({ id: 'new-wallet-email', address: '0xNewEmailAddress' });
 
       const result = await walletService.connect('new@example.com', 'email');
 
@@ -112,6 +115,7 @@ describe('WalletService', () => {
         linked_accounts: [{ type: 'email', address: 'new@example.com' }],
       });
       expect(result.isNewUser).toBe(true);
+      expect(result.walletAddress).toBe('0xNewEmailAddress');
     });
 
     it('should create new user and wallet for new user (Telegram)', async () => {
@@ -129,12 +133,14 @@ describe('WalletService', () => {
       // Create wallet returns new wallet
       mockPrivy._mocks.createWallet.mockResolvedValue({
         id: 'wallet-abc123',
+        address: '0xABC123Address',
       });
 
       const result = await walletService.connect('telegram_123');
 
       expect(result.success).toBe(true);
       expect(result.walletId).toBe('wallet-abc123');
+      expect(result.walletAddress).toBe('0xABC123Address');
       expect(result.privyUserId).toBe('privy-user-123');
       expect(result.isNewUser).toBe(true);
     });
@@ -148,6 +154,7 @@ describe('WalletService', () => {
             type: 'wallet',
             wallet_client: 'privy',
             id: 'existing-wallet-id',
+            address: '0xExistingAddress',
           },
         ],
       });
@@ -156,6 +163,7 @@ describe('WalletService', () => {
 
       expect(result.success).toBe(true);
       expect(result.walletId).toBe('existing-wallet-id');
+      expect(result.walletAddress).toBe('0xExistingAddress');
       expect(result.isNewUser).toBe(false);
       expect(mockPrivy._mocks.createWallet).not.toHaveBeenCalled();
     });
@@ -181,6 +189,7 @@ describe('WalletService', () => {
             type: 'wallet',
             wallet_client: 'privy',
             id: 'wallet-abc123',
+            address: '0xTransactAddress',
           },
         ],
       });
@@ -202,7 +211,7 @@ describe('WalletService', () => {
   });
 
   describe('disconnect', () => {
-    it('should return true when session exists', async () => {
+    it('should return wallet details when session exists', async () => {
       // Connect first
       mockPrivy._mocks.getByTelegramUserID.mockResolvedValue({
         id: 'privy-user-123',
@@ -211,18 +220,23 @@ describe('WalletService', () => {
             type: 'wallet',
             wallet_client: 'privy',
             id: 'wallet-abc123',
+            address: '0xDisconnectAddress',
           },
         ],
       });
       await walletService.connect('telegram_123');
 
       const result = walletService.disconnect('telegram_123');
-      expect(result).toBe(true);
+      expect(result.success).toBe(true);
+      expect(result.walletId).toBe('wallet-abc123');
+      expect(result.walletAddress).toBe('0xDisconnectAddress');
     });
 
-    it('should return false when no session exists', () => {
+    it('should return failure when no session exists', () => {
       const result = walletService.disconnect('unknown-user');
-      expect(result).toBe(false);
+      expect(result.success).toBe(false);
+      expect(result.walletId).toBeUndefined();
+      expect(result.walletAddress).toBeUndefined();
     });
   });
 
@@ -235,6 +249,7 @@ describe('WalletService', () => {
             type: 'wallet',
             wallet_client: 'privy',
             id: 'wallet-abc123',
+            address: '0xSessionAddress',
           },
         ],
       });
@@ -243,6 +258,7 @@ describe('WalletService', () => {
       const session = walletService.getSession('telegram_123');
       expect(session).toBeDefined();
       expect(session?.walletId).toBe('wallet-abc123');
+      expect(session?.walletAddress).toBe('0xSessionAddress');
     });
 
     it('should return undefined for unknown user', () => {
