@@ -20,6 +20,11 @@ export interface TxParams {
 	chainId?: number; // Default to Ethereum mainnet
 }
 
+// Authorization context for server-side signing
+export interface AuthorizationContext {
+	authorization_private_keys: string[];
+}
+
 // API Response types
 export interface ApiResponse<T = unknown> {
 	success: boolean;
@@ -81,3 +86,34 @@ export const ErrorCodes = {
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
+
+// Policy-related types
+export interface PolicyRule {
+	name: string;
+	method: string;
+	conditions: PolicyCondition[];
+	action: 'ALLOW' | 'DENY';
+}
+
+export interface PolicyCondition {
+	field_source: 'ethereum_transaction';
+	field: string;
+	operator: 'eq' | 'in' | 'lte' | 'gte' | 'gt' | 'lt';
+	value: string | number | string[] | number[];
+}
+
+export interface Policy {
+	id: string;
+	version: string;
+	name: string;
+	chain_type: string;
+	owner_id: string;
+	rules: PolicyRule[];
+	created_at: number;
+}
+
+export interface PolicyCreationResult {
+	success: boolean;
+	policyIds?: string[];
+	error?: string;
+}

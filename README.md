@@ -112,6 +112,7 @@ Check if user has an active session.
 | `PRIVY_APP_ID` | ✅ | Privy application ID |
 | `PRIVY_APP_SECRET` | ✅ | Privy application secret |
 | `PRIVY_SIGNER_ID` | ✅ | Privy signer ID for agentic transactions |
+| `PRIVY_SIGNER_PRIVATE_KEY` | ✅ | Privy authorization private key for server-side signing |
 | `PORT` | ❌ | HTTP server port (default: 3000) |
 
 ## Running
@@ -140,6 +141,80 @@ pnpm test:watch
 # Generate coverage report
 pnpm test:coverage
 ```
+
+## Server-Side Transaction Signing
+
+UniFlow uses Privy's authorization keys to enable server-side transaction signing. The server constructs an authorization context using `PRIVY_SIGNER_PRIVATE_KEY` and passes it to Privy's sendTransaction method, allowing automatic transaction signing without user interaction.
+
+### Security Notes
+- Keep `PRIVY_SIGNER_PRIVATE_KEY` secure - never expose to clients
+- Use only in trusted server environments
+- Implement proper authentication on `/api/transact` in production
+
+## Security Policies
+
+UniFlow implements conservative security policies on the Privy authorization key to protect user wallets from unauthorized transactions.
+
+### Policy Restrictions
+
+1. **Chain Allowlist**: Transactions only allowed on:
+   - Ethereum Mainnet (Chain ID: 1)
+   - Arbitrum (Chain ID: 42161)
+   - Base (Chain ID: 8453)
+   - Unichain (Chain ID: 130)
+   - BSC (Chain ID: 56)
+
+2. **Contract Allowlist**: Interactions restricted to Uniswap V4 contracts only:
+   - Pool Manager
+   - Position Manager
+   - State View
+
+3. **Transaction Value Limit**: Maximum 0.1 ETH per transaction
+
+### How It Works
+
+Policies are automatically created on server startup:
+1. Server checks if policy exists by name
+2. If not found, creates new policy via Privy API
+3. Policy is owned by `PRIVY_SIGNER_ID` (only the authorization key can modify it)
+4. Policy IDs are passed to wallet creation in `additional_signers.override_policy_ids`
+5. Privy enforces these policies on all transactions signed by the authorization key
+
+### Security Notes
+
+- Policies are enforced at the Privy API level, not application level
+- Server fails to start if policy initialization fails (fail-closed security)
+- Policy owner is the authorization key itself, preventing unauthorized modifications
+- Contract addresses are sourced from `src/constants.ts`
+
+### Troubleshooting
+
+**Server fails to start with policy errors:**
+
+The server will display a detailed error box with specific troubleshooting steps. Common issues:
+
+1. **"PRIVY_SIGNER_ID not configured"**
+   - Set the `PRIVY_SIGNER_ID` environment variable
+   - This should be your authorization key ID from Privy dashboard
+
+2. **"Privy API authentication failed"**
+   - Verify `PRIVY_APP_ID` and `PRIVY_APP_SECRET` are correct
+   - Check that credentials have policy creation permissions
+   - Ensure the Privy app is active
+
+3. **"Privy API rate limit exceeded"**
+   - Wait a few minutes before restarting
+   - Check for other services making excessive API calls
+
+4. **"Privy API error"**
+   - Check Privy status page for outages
+   - Review the full error details in logs
+   - Contact Privy support if needed
+
+**Policy updates needed:**
+- Modify `src/core/policyConfig.ts` with new rules
+- Redeploy the service
+- Existing policy will be validated and warnings logged if different
 
 ## Error Codes
 
