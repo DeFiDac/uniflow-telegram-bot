@@ -7,7 +7,8 @@ export class PolicyConfig {
 	 * Generate chain allowlist condition - only allow transactions on supported chains
 	 */
 	static getChainAllowlistCondition(): PolicyCondition {
-		const allowedChains = Object.values(UNISWAP_V4_DEPLOYMENTS).map((d) => d.chainId);
+		// Convert chain IDs to strings as required by Privy API
+		const allowedChains = Object.values(UNISWAP_V4_DEPLOYMENTS).map((d) => String(d.chainId));
 
 		return {
 			field_source: 'ethereum_transaction',
