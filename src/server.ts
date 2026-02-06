@@ -8,6 +8,7 @@ require('dotenv').config();
 import express from 'express';
 import { PrivyClient } from '@privy-io/node';
 import { WalletService, PolicyManager } from './core';
+import { WalletService, UniswapV4Service } from './core';
 import { createRouter, errorHandler, requestLogger } from './api';
 
 // Validate critical environment variables
@@ -22,11 +23,29 @@ for (const envVar of requiredEnvVars) {
 
 console.log('✅ Environment variables validated');
 
+// Validate optional environment variables
+const optionalEnvVars = ['THE_GRAPH_API_KEY', 'COINMARKETCAP_API_KEY'];
+optionalEnvVars.forEach((key) => {
+  if (!process.env[key]) {
+    console.warn(
+      `⚠️  Optional env var missing: ${key} - Some features may not work`
+    );
+  }
+});
+
+console.log('🚀 UniFlow API Server starting...');
+
 // Initialize Privy client
 const privy = new PrivyClient({
   appId: process.env.PRIVY_APP_ID ?? '',
   appSecret: process.env.PRIVY_APP_SECRET ?? '',
 });
+
+// Initialize WalletService
+const walletService = new WalletService(privy);
+
+// Initialize UniswapV4Service
+const uniswapV4Service = new UniswapV4Service();
 
 // Initialize Express app
 const app: express.Express = express();
@@ -62,6 +81,12 @@ app.get('/health', (_req, res) => {
     service: 'UniFlow API',
   });
 });
+
+// API routes
+app.use('/api', createRouter(walletService, uniswapV4Service));
+
+// Error handler (must be last)
+app.use(errorHandler);
 
 // Shutdown guard
 let isShuttingDown = false;
@@ -130,6 +155,16 @@ async function startServer() {
 startServer().catch((error) => {
   console.error('❌ Failed to start server:', error);
   process.exit(1);
+// Start server
+const server = app.listen(PORT, () => {
+  console.log(`✅ UniFlow API Server is running on port ${PORT}`);
+  console.log('📡 Available endpoints:');
+  console.log(`   GET  /health                      - Health check`);
+  console.log(`   POST /api/connect                 - Connect wallet`);
+  console.log(`   POST /api/transact                - Execute transaction`);
+  console.log(`   POST /api/disconnect              - End session`);
+  console.log(`   GET  /api/session/:userId         - Check session`);
+  console.log(`   GET  /api/v4/positions/:address   - Get Uniswap V4 positions`);
 });
 
 // Graceful shutdown handler
