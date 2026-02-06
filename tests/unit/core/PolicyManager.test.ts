@@ -41,13 +41,13 @@ describe('PolicyManager', () => {
 	});
 
 	it('should reuse existing policy', async () => {
-		// Mock GET returns existing policy
+		// Mock GET returns existing policy with composite rule
 		vi.mocked(axios.get).mockResolvedValue({
 			data: [
 				{
 					id: 'existing-policy-456',
 					name: 'UniFlow Conservative Security Policy',
-					rules: [{}, {}, {}],
+					rules: [{ conditions: [{}, {}, {}] }], // Single rule with 3 conditions
 					owner_id: 'test-signer-id',
 					created_at: Date.now(),
 				},

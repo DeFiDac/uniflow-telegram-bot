@@ -1,32 +1,25 @@
 import { UNISWAP_V4_DEPLOYMENTS } from '../constants';
-import { PolicyRule } from './types';
+import { PolicyRule, PolicyCondition } from './types';
 
 export class PolicyConfig {
 	/**
-	 * Generate chain allowlist rule - only allow transactions on supported chains
+	 * Generate chain allowlist condition - only allow transactions on supported chains
 	 */
-	static getChainAllowlistRule(): PolicyRule {
+	static getChainAllowlistCondition(): PolicyCondition {
 		const allowedChains = Object.values(UNISWAP_V4_DEPLOYMENTS).map((d) => d.chainId);
 
 		return {
-			name: 'Chain Allowlist',
-			method: 'eth_sendTransaction',
-			conditions: [
-				{
-					field_source: 'ethereum_transaction',
-					field: 'chain_id',
-					operator: 'in',
-					value: allowedChains,
-				},
-			],
-			action: 'ALLOW',
+			field_source: 'ethereum_transaction',
+			field: 'chain_id',
+			operator: 'in',
+			value: allowedChains,
 		};
 	}
 
 	/**
-	 * Generate contract allowlist rule - only allow Uniswap V4 contracts
+	 * Generate contract allowlist condition - only allow Uniswap V4 contracts
 	 */
-	static getContractAllowlistRule(): PolicyRule {
+	static getContractAllowlistCondition(): PolicyCondition {
 		const allowedContracts = Object.values(UNISWAP_V4_DEPLOYMENTS).flatMap((deployment) => [
 			deployment.poolManager.toLowerCase(),
 			deployment.positionManager.toLowerCase(),
@@ -34,34 +27,37 @@ export class PolicyConfig {
 		]);
 
 		return {
-			name: 'Uniswap V4 Contract Allowlist',
-			method: 'eth_sendTransaction',
-			conditions: [
-				{
-					field_source: 'ethereum_transaction',
-					field: 'to',
-					operator: 'in',
-					value: allowedContracts,
-				},
-			],
-			action: 'ALLOW',
+			field_source: 'ethereum_transaction',
+			field: 'to',
+			operator: 'in',
+			value: allowedContracts,
 		};
 	}
 
 	/**
-	 * Generate value limit rule - max 0.1 ETH per transaction
+	 * Generate value limit condition - max 0.1 ETH per transaction
 	 */
-	static getValueLimitRule(): PolicyRule {
+	static getValueLimitCondition(): PolicyCondition {
 		return {
-			name: 'Transaction Value Limit',
+			field_source: 'ethereum_transaction',
+			field: 'value',
+			operator: 'lte',
+			value: '100000000000000000', // 0.1 ETH in wei
+		};
+	}
+
+	/**
+	 * Generate composite allow rule that ANDs all conditions
+	 * A transaction is allowed only if it passes chain, contract, AND value checks
+	 */
+	static getCompositeAllowRule(): PolicyRule {
+		return {
+			name: 'UniFlow Composite Security Rule',
 			method: 'eth_sendTransaction',
 			conditions: [
-				{
-					field_source: 'ethereum_transaction',
-					field: 'value',
-					operator: 'lte',
-					value: '100000000000000000', // 0.1 ETH in wei
-				},
+				this.getChainAllowlistCondition(),
+				this.getContractAllowlistCondition(),
+				this.getValueLimitCondition(),
 			],
 			action: 'ALLOW',
 		};
@@ -76,11 +72,7 @@ export class PolicyConfig {
 			name: 'UniFlow Conservative Security Policy',
 			chain_type: 'ethereum',
 			owner_id: ownerId,
-			rules: [
-				this.getChainAllowlistRule(),
-				this.getContractAllowlistRule(),
-				this.getValueLimitRule(),
-			],
+			rules: [this.getCompositeAllowRule()],
 		};
 	}
 }
