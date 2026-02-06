@@ -65,7 +65,7 @@ app.get('/health', (_req, res) => {
 
 // Shutdown guard
 let isShuttingDown = false;
-let server: ReturnType<typeof app.listen>;
+let server: ReturnType<typeof app.listen> | undefined;
 
 // Async initialization function
 async function startServer() {
@@ -100,6 +100,7 @@ async function startServer() {
     console.error('═══════════════════════════════════════════════════════════');
     console.error('');
     process.exit(1); // Fail-closed
+    return; // Prevent further execution when process.exit is mocked in tests
   }
 
   console.log(`✅ Security policies active: ${policyResult.policyIds?.join(', ')}`);
@@ -142,17 +143,22 @@ const gracefulShutdown = async (signal: string) => {
   console.log(`\n${signal} received. Shutting down gracefully...`);
 
   try {
-    // Close HTTP server
-    await new Promise<void>((resolve, reject) => {
-      server.close((err) => {
-        if (err) {
-          reject(err);
-        } else {
-          console.log('✅ HTTP server closed');
-          resolve();
-        }
+    // Close HTTP server (only if it was started)
+    if (server) {
+      const serverToClose = server; // Capture for closure
+      await new Promise<void>((resolve, reject) => {
+        serverToClose.close((err) => {
+          if (err) {
+            reject(err);
+          } else {
+            console.log('✅ HTTP server closed');
+            resolve();
+          }
+        });
       });
-    });
+    } else {
+      console.log('ℹ️  HTTP server was not started, skipping close');
+    }
 
     // Clear sessions (only if walletService was initialized)
     if (walletService) {
