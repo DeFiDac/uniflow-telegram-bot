@@ -96,4 +96,68 @@ describe('PolicyManager', () => {
 	it('should throw error if getPolicyIds called before initialize', () => {
 		expect(() => policyManager.getPolicyIds()).toThrow('not initialized');
 	});
+
+	describe('Policy Validation', () => {
+		it('should reject policy with wrong owner_id', async () => {
+			process.env.PRIVY_POLICY_ID = 'wrong-owner-policy';
+
+			// Mock GET returns policy with different owner
+			vi.mocked(axios.get).mockResolvedValue({
+				data: {
+					id: 'wrong-owner-policy',
+					name: 'UniFlow Conservative Security Policy',
+					rules: [{ conditions: [{}, {}, {}] }],
+					owner_id: 'different-signer-id', // Wrong owner!
+					created_at: Date.now(),
+				},
+			});
+
+			const result = await policyManager.initialize();
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('owner mismatch');
+			expect(result.error).toContain('test-signer-id');
+			expect(result.error).toContain('different-signer-id');
+		});
+
+		it('should reject policy with wrong number of rules', async () => {
+			process.env.PRIVY_POLICY_ID = 'wrong-rules-policy';
+
+			// Mock GET returns policy with wrong number of rules
+			vi.mocked(axios.get).mockResolvedValue({
+				data: {
+					id: 'wrong-rules-policy',
+					name: 'UniFlow Conservative Security Policy',
+					rules: [{}, {}], // Should be 1 rule, not 2!
+					owner_id: 'test-signer-id',
+					created_at: Date.now(),
+				},
+			});
+
+			const result = await policyManager.initialize();
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('rule count mismatch');
+		});
+
+		it('should reject policy with wrong number of conditions', async () => {
+			process.env.PRIVY_POLICY_ID = 'wrong-conditions-policy';
+
+			// Mock GET returns policy with wrong number of conditions
+			vi.mocked(axios.get).mockResolvedValue({
+				data: {
+					id: 'wrong-conditions-policy',
+					name: 'UniFlow Conservative Security Policy',
+					rules: [{ conditions: [{}] }], // Should be 3 conditions, not 1!
+					owner_id: 'test-signer-id',
+					created_at: Date.now(),
+				},
+			});
+
+			const result = await policyManager.initialize();
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('condition count mismatch');
+		});
+	});
 });

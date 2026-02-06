@@ -157,26 +157,42 @@ export class PolicyManager {
 
 	/**
 	 * Validate existing policy matches expected configuration
+	 * Throws error if policy doesn't match security requirements
 	 */
 	private validatePolicy(policy: Policy): void {
-		const expected = PolicyConfig.getPolicyDefinition(policy.owner_id);
+		// Ensure PRIVY_SIGNER_ID is configured
+		const expectedSignerId = process.env.PRIVY_SIGNER_ID;
+		if (!expectedSignerId) {
+			throw new Error('PRIVY_SIGNER_ID environment variable is not set');
+		}
 
+		// Fail fast if owner doesn't match - security critical
+		if (policy.owner_id !== expectedSignerId) {
+			throw new Error(
+				`Policy owner mismatch: expected '${expectedSignerId}', but policy is owned by '${policy.owner_id}'. ` +
+					`This policy cannot be used for security reasons.`
+			);
+		}
+
+		// Build expected configuration using the correct signer ID
+		const expected = PolicyConfig.getPolicyDefinition(expectedSignerId);
+
+		// Fail fast if rule count doesn't match
 		if (policy.rules.length !== expected.rules.length) {
-			console.warn('[PolicyManager] WARNING: Existing policy has different number of rules');
-			console.warn(`[PolicyManager] Expected ${expected.rules.length} rules, found ${policy.rules.length}`);
+			throw new Error(
+				`Policy rule count mismatch: expected ${expected.rules.length} rule(s), but policy has ${policy.rules.length} rule(s). ` +
+					`Policy configuration does not match security requirements.`
+			);
 		}
 
-		if (policy.owner_id !== process.env.PRIVY_SIGNER_ID) {
-			console.warn('[PolicyManager] WARNING: Policy owner_id mismatch');
-			console.warn(`[PolicyManager] Expected ${process.env.PRIVY_SIGNER_ID}, found ${policy.owner_id}`);
-		}
-
-		// Optionally check if all expected conditions are present
+		// Validate condition count in the composite rule
 		const expectedConditionCount = expected.rules[0]?.conditions?.length || 0;
 		const actualConditionCount = policy.rules[0]?.conditions?.length || 0;
 		if (expectedConditionCount !== actualConditionCount) {
-			console.warn('[PolicyManager] WARNING: Policy rule condition count mismatch');
-			console.warn(`[PolicyManager] Expected ${expectedConditionCount} conditions, found ${actualConditionCount}`);
+			throw new Error(
+				`Policy condition count mismatch: expected ${expectedConditionCount} condition(s), but policy has ${actualConditionCount} condition(s). ` +
+					`Policy configuration does not match security requirements.`
+			);
 		}
 	}
 }
