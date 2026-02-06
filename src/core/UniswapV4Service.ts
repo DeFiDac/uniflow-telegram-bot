@@ -4,10 +4,14 @@
 
 import { createPublicClient, http, PublicClient, formatUnits } from 'viem';
 import { GraphQLClient } from 'graphql-request';
+import { Position } from '@uniswap/v4-sdk';
+import { Token } from '@uniswap/sdk-core';
+import JSBI from 'jsbi';
 import { V4PositionsResult, V4Position, TokenAmount } from './types';
 import {
 	V4_CHAIN_CONFIGS,
 	POSITION_MANAGER_ABI,
+	POOL_MANAGER_ABI,
 	ERC20_ABI,
 } from './v4-config';
 import { PriceService } from './PriceService';
@@ -192,7 +196,7 @@ export class UniswapV4Service {
 	}
 
 	/**
-	 * Fetch position data from on-chain contracts
+	 * Fetch position data from on-chain contracts with proper Uniswap V4 math
 	 */
 	private async fetchPositionData(
 		tokenId: string,
@@ -200,7 +204,7 @@ export class UniswapV4Service {
 		viemClient: PublicClient,
 		config: typeof V4_CHAIN_CONFIGS[number]
 	): Promise<V4Position> {
-		// Call getPoolAndPositionInfo
+		// 1. Get pool and position info
 		const positionInfo = (await viemClient.readContract({
 			address: config.positionManagerAddress as `0x${string}`,
 			abi: POSITION_MANAGER_ABI,
@@ -220,9 +224,28 @@ export class UniswapV4Service {
 		];
 
 		const [poolKey, tickLower, tickUpper, liquidity] = positionInfo;
-		const { currency0, currency1 } = poolKey;
+		const { currency0, currency1, fee } = poolKey;
 
-		// Fetch token metadata
+		// Type-safe poolKey for contract calls
+		const poolKeyTyped = {
+			currency0: currency0 as `0x${string}`,
+			currency1: currency1 as `0x${string}`,
+			fee,
+			tickSpacing: poolKey.tickSpacing,
+			hooks: poolKey.hooks as `0x${string}`,
+		};
+
+		// 2. Get pool state (sqrtPriceX96, current tick)
+		const slot0 = (await viemClient.readContract({
+			address: config.poolManagerAddress as `0x${string}`,
+			abi: POOL_MANAGER_ABI,
+			functionName: 'getSlot0',
+			args: [poolKeyTyped],
+		})) as [bigint, number, number, number];
+
+		const [sqrtPriceX96, currentTick] = slot0;
+
+		// 3. Fetch token metadata
 		const [symbol0, decimals0, symbol1, decimals1] = await Promise.all([
 			this.getTokenSymbol(currency0, viemClient),
 			this.getTokenDecimals(currency0, viemClient),
@@ -230,13 +253,67 @@ export class UniswapV4Service {
 			this.getTokenDecimals(currency1, viemClient),
 		]);
 
-		// Calculate token amounts (simplified: 50/50 split of liquidity)
-		// TODO: Improve with proper tick math using @uniswap/v4-sdk
-		const liquidityNum = Number(liquidity);
-		const amount0 = (liquidityNum / 2).toString();
-		const amount1 = (liquidityNum / 2).toString();
+		// 4. Calculate token amounts using Uniswap SDK Position class
+		const token0 = new Token(chainId, currency0, decimals0, symbol0, symbol0);
+		const token1 = new Token(chainId, currency1, decimals1, symbol1, symbol1);
 
-		// Fetch USD prices
+		// Convert BigInt to JSBI for SDK compatibility
+		const liquidityJSBI = JSBI.BigInt(liquidity.toString());
+		const sqrtPriceX96JSBI = JSBI.BigInt(sqrtPriceX96.toString());
+
+		const position = new Position({
+			pool: {
+				token0,
+				token1,
+				fee,
+				sqrtRatioX96: sqrtPriceX96JSBI,
+				liquidity: JSBI.BigInt(0),
+				tick: currentTick,
+			} as any,
+			liquidity: liquidityJSBI,
+			tickLower,
+			tickUpper,
+		});
+
+		// Get token amounts from position and convert JSBI back to BigInt
+		const amount0Raw = BigInt(position.amount0.quotient.toString());
+		const amount1Raw = BigInt(position.amount1.quotient.toString());
+
+		// 5. Get position info with fee growth data
+		const posInfoWithFees = (await viemClient.readContract({
+			address: config.positionManagerAddress as `0x${string}`,
+			abi: POSITION_MANAGER_ABI,
+			functionName: 'getPositionInfo',
+			args: [BigInt(tokenId)],
+		})) as [bigint, bigint, bigint];
+
+		const [, feeGrowthInside0LastX128, feeGrowthInside1LastX128] = posInfoWithFees;
+
+		// 6. Get current feeGrowthInside from pool
+		const feeGrowthInside = (await viemClient.readContract({
+			address: config.poolManagerAddress as `0x${string}`,
+			abi: POOL_MANAGER_ABI,
+			functionName: 'getFeeGrowthInside',
+			args: [poolKeyTyped, tickLower, tickUpper],
+		})) as [bigint, bigint];
+
+		const [feeGrowthInside0X128, feeGrowthInside1X128] = feeGrowthInside;
+
+		// 7. Calculate uncollected fees
+		// Formula: (feeGrowthInsideCurrent - feeGrowthInsideLast) * liquidity / 2^128
+		const Q128 = 2n ** 128n;
+		const fees0Raw =
+			((feeGrowthInside0X128 - feeGrowthInside0LastX128) * liquidity) / Q128;
+		const fees1Raw =
+			((feeGrowthInside1X128 - feeGrowthInside1LastX128) * liquidity) / Q128;
+
+		// 8. Format token amounts (convert BigInt to human-readable)
+		const amount0Formatted = parseFloat(formatUnits(amount0Raw, decimals0));
+		const amount1Formatted = parseFloat(formatUnits(amount1Raw, decimals1));
+		const fees0Formatted = parseFloat(formatUnits(fees0Raw, decimals0));
+		const fees1Formatted = parseFloat(formatUnits(fees1Raw, decimals1));
+
+		// 9. Fetch USD prices
 		const prices = await this.priceService.getTokenPrices(
 			[currency0, currency1],
 			chainId
@@ -245,23 +322,16 @@ export class UniswapV4Service {
 		const price0 = prices.get(currency0.toLowerCase()) || 0;
 		const price1 = prices.get(currency1.toLowerCase()) || 0;
 
-		// Calculate USD values
-		const amount0Formatted = parseFloat(
-			formatUnits(BigInt(Math.floor(parseFloat(amount0))), decimals0)
-		);
-		const amount1Formatted = parseFloat(
-			formatUnits(BigInt(Math.floor(parseFloat(amount1))), decimals1)
-		);
-
+		// 10. Calculate USD values
 		const usdValue0 = amount0Formatted * price0;
 		const usdValue1 = amount1Formatted * price1;
 		const totalValueUsd = usdValue0 + usdValue1;
 
-		// Estimate fees (simplified: 1% of position value)
-		// TODO: Implement accurate fee calculation using feeGrowth
-		const feesUsd = totalValueUsd * 0.01;
+		const fees0Usd = fees0Formatted * price0;
+		const fees1Usd = fees1Formatted * price1;
+		const feesUsd = fees0Usd + fees1Usd;
 
-		const token0: TokenAmount = {
+		const token0Data: TokenAmount = {
 			token: currency0,
 			symbol: symbol0,
 			amount: amount0Formatted.toFixed(6),
@@ -269,7 +339,7 @@ export class UniswapV4Service {
 			usdValue: usdValue0,
 		};
 
-		const token1: TokenAmount = {
+		const token1Data: TokenAmount = {
 			token: currency1,
 			symbol: symbol1,
 			amount: amount1Formatted.toFixed(6),
@@ -277,13 +347,16 @@ export class UniswapV4Service {
 			usdValue: usdValue1,
 		};
 
+		// Use poolKey representation instead of fake address
+		const poolKeyStr = `${currency0.slice(0, 6)}...${currency0.slice(-4)}/${currency1.slice(0, 6)}...${currency1.slice(-4)}`;
+
 		return {
 			tokenId,
 			chainId,
 			chainName: config.name,
-			poolAddress: `${currency0}-${currency1}`,
-			token0,
-			token1,
+			poolAddress: poolKeyStr, // Pool key representation (not a real address)
+			token0: token0Data,
+			token1: token1Data,
 			liquidity: liquidity.toString(),
 			tickLower,
 			tickUpper,
