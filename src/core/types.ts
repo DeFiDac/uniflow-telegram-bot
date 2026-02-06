@@ -6,6 +6,7 @@
 export interface SessionData {
 	userId: string; // Privy user ID
 	walletId: string; // Privy wallet ID
+	walletAddress: string; // Ethereum wallet address
 }
 
 // User Identity Types
@@ -30,6 +31,7 @@ export interface ApiResponse<T = unknown> {
 // Connect endpoint response data
 export interface ConnectResponseData {
 	walletId: string;
+	walletAddress: string;
 	privyUserId: string;
 	isNewUser: boolean;
 }
@@ -43,12 +45,14 @@ export interface TransactResponseData {
 export interface SessionResponseData {
 	hasSession: boolean;
 	walletId?: string;
+	walletAddress?: string;
 }
 
 // Wallet service result types
 export interface WalletConnectResult {
 	success: boolean;
 	walletId?: string;
+	walletAddress?: string;
 	privyUserId?: string;
 	isNewUser?: boolean;
 	error?: string;
@@ -58,6 +62,12 @@ export interface WalletTransactResult {
 	success: boolean;
 	hash?: string;
 	error?: string;
+}
+
+export interface WalletDisconnectResult {
+	success: boolean;
+	walletId?: string;
+	walletAddress?: string;
 }
 
 // Error codes for API responses
