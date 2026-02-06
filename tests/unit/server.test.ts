@@ -20,6 +20,7 @@ vi.mock('../../src/core', () => ({
 			error: 'Mock initialization blocked for test',
 		}),
 	})),
+	UniswapV4Service: vi.fn(),
 }));
 
 vi.mock('../../src/api', () => ({
