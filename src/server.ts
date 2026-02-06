@@ -78,6 +78,12 @@ app.get('/health', (_req, res) => {
 	});
 });
 
+// API routes
+app.use('/api', createRouter(walletService, uniswapV4Service));
+
+// Error handler (must be last)
+app.use(errorHandler);
+
 // Shutdown guard
 let isShuttingDown = false;
 let server: ReturnType<typeof app.listen> | undefined;
