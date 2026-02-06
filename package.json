@@ -26,7 +26,10 @@
     "@uniswap/v4-sdk": "^1.27.0",
     "axios": "^1.13.4",
     "dotenv": "^17.2.3",
+    "ethers": "^5.7.2",
     "express": "^5.2.1",
+    "graphql-request": "^7.4.0",
+    "jsbi": "^3.2.5",
     "viem": "^2.45.1"
   },
   "devDependencies": {
