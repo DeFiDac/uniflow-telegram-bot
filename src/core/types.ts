@@ -116,6 +116,65 @@ export interface PolicyCreationResult {
 	success: boolean;
 	policyIds?: string[];
 	error?: string;
+// Chain configuration
+export interface UniswapV4ChainConfig {
+	chainId: number;
+	name: string;
+	positionManagerAddress: string;
+	poolManagerAddress: string;
+	subgraphUrl: string;
+	rpcUrl: string;
+}
+
+// Position data structures
+export interface TokenAmount {
+	token: string; // Contract address
+	symbol: string; // e.g., "USDC", "WETH"
+	amount: string; // Human-readable amount
+	decimals: number;
+	usdValue: number;
+}
+
+export interface V4Position {
+	tokenId: string;
+	chainId: number;
+	chainName: string;
+	poolAddress: string;
+	token0: TokenAmount;
+	token1: TokenAmount;
+	liquidity: string;
+	tickLower: number;
+	tickUpper: number;
+	feesUsd: number; // Accumulated fees in USD
+	totalValueUsd: number; // Total position value
+}
+
+// Service result type (follows existing pattern)
+export interface V4PositionsResult {
+	success: boolean;
+	positions?: V4Position[];
+	totalValueUsd?: number;
+	totalFeesUsd?: number;
+	error?: string;
+	chainErrors?: { chainId: number; error: string }[];
+}
+
+// API response data type
+export interface V4PositionsResponseData {
+	walletAddress: string;
+	positions: V4Position[];
+	totalValueUsd: number;
+	totalFeesUsd: number;
+	timestamp: string;
+	chainErrors?: { chainId: number; error: string }[];
+}
+
+// Price cache
+export interface PriceData {
+	address: string;
+	symbol: string;
+	priceUsd: number;
+	timestamp: number;
 }
 
 // Chain configuration
