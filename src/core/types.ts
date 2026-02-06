@@ -99,7 +99,7 @@ export interface PolicyCondition {
 	field_source: 'ethereum_transaction';
 	field: string;
 	operator: 'eq' | 'in' | 'lte' | 'gte' | 'gt' | 'lt';
-	value: string | number | string[] | number[];
+	value: string | string[]; // Privy API requires all values as strings
 }
 
 export interface Policy {
