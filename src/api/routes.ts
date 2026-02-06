@@ -13,7 +13,27 @@ import {
   V4PositionsResponseData,
   ErrorCodes,
 } from '../core/types';
+import { SUPPORTED_CHAIN_IDS } from '../core/v4-config';
 import { validateUserId, validateTxParams } from './middleware';
+
+/**
+ * Strictly validate and parse chainId from string
+ * Rejects strings like "1abc" that parseInt would accept
+ */
+function parseChainIdStrict(raw: string): number | null {
+  // Method 1: Check if string contains only digits
+  if (!/^\d+$/.test(raw)) {
+    return null;
+  }
+
+  // Method 2: Verify Number conversion round-trips exactly
+  const num = Number(raw);
+  if (!Number.isInteger(num) || String(num) !== raw) {
+    return null;
+  }
+
+  return num;
+}
 
 export function createRouter(
   walletService: WalletService,
@@ -174,6 +194,7 @@ export function createRouter(
       // Validate chainId if provided
       let chainId: number | undefined;
       if (chainIdParam) {
+        // Normalize to string
         let chainIdStr: string;
         if (typeof chainIdParam === 'string') {
           chainIdStr = chainIdParam;
@@ -182,16 +203,20 @@ export function createRouter(
         } else {
           chainIdStr = String(chainIdParam);
         }
-        chainId = parseInt(chainIdStr, 10);
-        if (![1, 56, 8453, 42161, 1301].includes(chainId)) {
+
+        // Strictly parse chainId (rejects "1abc", etc.)
+        const parsedChainId = parseChainIdStrict(chainIdStr);
+        if (parsedChainId === null || !SUPPORTED_CHAIN_IDS.includes(parsedChainId)) {
           const response: ApiResponse = {
             success: false,
-            message: 'Invalid chainId. Supported: 1, 56, 8453, 42161, 1301',
+            message: `Invalid chainId. Supported: ${SUPPORTED_CHAIN_IDS.join(', ')}`,
             error: ErrorCodes.INVALID_REQUEST,
           };
           res.status(400).json(response);
           return;
         }
+
+        chainId = parsedChainId;
       }
 
       const result = await uniswapV4Service.getPositions(walletAddress, chainId);
