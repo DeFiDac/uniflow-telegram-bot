@@ -1,0 +1,625 @@
+/**
+ * Uniswap V4 Position Minting Service
+ * Handles pool discovery, token approvals, and position minting
+ */
+
+import { createPublicClient, http, PublicClient, parseUnits, formatUnits, encodeFunctionData } from 'viem';
+import { mainnet, bsc, base, arbitrum } from 'viem/chains';
+import { Pool, Position, V4PositionManager } from '@uniswap/v4-sdk';
+import { Token, CurrencyAmount, Percent } from '@uniswap/sdk-core';
+import { nearestUsableTick } from '@uniswap/v3-sdk';
+import JSBI from 'jsbi';
+import {
+	V4PoolDiscoveryParams,
+	V4PoolDiscoveryResult,
+	V4ApprovalParams,
+	V4ApprovalResult,
+	V4MintSimpleParams,
+	V4MintResult,
+	ErrorCodes,
+} from './types';
+import { V4_CHAIN_CONFIGS, STATE_VIEW_ABI, ERC20_ABI, POOL_MANAGER_ABI } from './v4-config';
+import { WalletService } from './WalletService';
+
+// Unichain chain config (not in viem yet)
+const unichain = {
+	id: 130,
+	name: 'Unichain',
+	nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+	rpcUrls: {
+		default: { http: ['https://rpc.unichain.org'] },
+	},
+} as const;
+
+const CHAIN_CONFIGS: Record<number, any> = {
+	1: mainnet,
+	56: bsc,
+	8453: base,
+	42161: arbitrum,
+	130: unichain,
+};
+
+// Native ETH address representation
+const NATIVE_ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
+
+// Max uint256 for unlimited approvals
+const MAX_UINT256 = '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+
+// Fee tiers to try (in order)
+const FEE_TIERS = [
+	{ fee: 500, tickSpacing: 10 },
+	{ fee: 3000, tickSpacing: 60 },
+	{ fee: 10000, tickSpacing: 200 },
+];
+
+interface TokenInfo {
+	address: string;
+	symbol: string;
+	decimals: number;
+}
+
+interface PoolState {
+	sqrtPriceX96: bigint;
+	tick: number;
+	liquidity: bigint;
+}
+
+export class UniswapV4MintService {
+	private viemClients: Map<number, any>;
+
+	constructor() {
+		this.viemClients = new Map();
+	}
+
+	/**
+	 * Get or create viem client for chain
+	 */
+	private getViemClient(chainId: number): any {
+		if (!this.viemClients.has(chainId)) {
+			const config = V4_CHAIN_CONFIGS[chainId];
+			if (!config) {
+				throw new Error(`Unsupported chain ID: ${chainId}`);
+			}
+
+			const chainConfig = CHAIN_CONFIGS[chainId];
+			const client = createPublicClient({
+				chain: chainConfig,
+				transport: http(config.rpcUrl),
+			});
+
+			this.viemClients.set(chainId, client);
+		}
+
+		return this.viemClients.get(chainId)!;
+	}
+
+	/**
+	 * Get token information (symbol, decimals)
+	 */
+	private async getTokenInfo(tokenAddress: string, chainId: number): Promise<TokenInfo> {
+		// Handle native ETH
+		if (tokenAddress === NATIVE_ETH_ADDRESS) {
+			return {
+				address: NATIVE_ETH_ADDRESS,
+				symbol: 'ETH',
+				decimals: 18,
+			};
+		}
+
+		const client = this.getViemClient(chainId);
+
+		try {
+			const [symbol, decimals] = await Promise.all([
+				client.readContract({
+					address: tokenAddress as `0x${string}`,
+					abi: ERC20_ABI,
+					functionName: 'symbol',
+				}),
+				client.readContract({
+					address: tokenAddress as `0x${string}`,
+					abi: ERC20_ABI,
+					functionName: 'decimals',
+				}),
+			]);
+
+			return {
+				address: tokenAddress,
+				symbol: symbol as string,
+				decimals: decimals as number,
+			};
+		} catch (error) {
+			console.error(`Failed to get token info for ${tokenAddress}:`, error);
+			throw new Error(`Invalid token address: ${tokenAddress}`);
+		}
+	}
+
+	/**
+	 * Fetch pool state from StateView contract
+	 */
+	private async fetchPoolState(
+		poolKey: {
+			currency0: string;
+			currency1: string;
+			fee: number;
+			tickSpacing: number;
+			hooks: string;
+		},
+		chainId: number
+	): Promise<PoolState | null> {
+		const config = V4_CHAIN_CONFIGS[chainId];
+		const client = this.getViemClient(chainId);
+
+		try {
+			// Call getSlot0 from PoolManager
+			const slot0Result = await client.readContract({
+				address: config.poolManagerAddress as `0x${string}`,
+				abi: POOL_MANAGER_ABI,
+				functionName: 'getSlot0',
+				args: [
+					{
+						currency0: poolKey.currency0 as `0x${string}`,
+						currency1: poolKey.currency1 as `0x${string}`,
+						fee: poolKey.fee,
+						tickSpacing: poolKey.tickSpacing,
+						hooks: poolKey.hooks as `0x${string}`,
+					},
+				],
+			});
+
+			const [sqrtPriceX96, tick] = slot0Result as readonly [bigint, number, number, number];
+
+			// If sqrtPriceX96 is 0, pool doesn't exist
+			if (sqrtPriceX96 === 0n) {
+				return null;
+			}
+
+			// Note: We don't have a pool ID here, we would need to compute it
+			// For now, return a default liquidity value
+			// In production, you should compute the pool ID properly
+			const liquidity = 0n;
+
+			return {
+				sqrtPriceX96,
+				tick,
+				liquidity,
+			};
+		} catch (error) {
+			console.error('Failed to fetch pool state:', error);
+			return null;
+		}
+	}
+
+	/**
+	 * Discover pool for token pair (tries multiple fee tiers)
+	 */
+	async discoverPool(params: V4PoolDiscoveryParams): Promise<V4PoolDiscoveryResult> {
+		const { token0, token1, chainId } = params;
+
+		try {
+			// Validate chain
+			if (!V4_CHAIN_CONFIGS[chainId]) {
+				return {
+					success: false,
+					error: `Unsupported chain ID: ${chainId}`,
+				};
+			}
+
+			// Ensure token0 < token1 (Uniswap convention)
+			const [currency0, currency1] =
+				token0.toLowerCase() < token1.toLowerCase() ? [token0, token1] : [token1, token0];
+
+			// Get token info
+			const [token0Info, token1Info] = await Promise.all([
+				this.getTokenInfo(currency0, chainId),
+				this.getTokenInfo(currency1, chainId),
+			]);
+
+			// Try each fee tier
+			for (const { fee, tickSpacing } of FEE_TIERS) {
+				const poolKey = {
+					currency0,
+					currency1,
+					fee,
+					tickSpacing,
+					hooks: NATIVE_ETH_ADDRESS, // No hooks
+				};
+
+				const poolState = await this.fetchPoolState(poolKey, chainId);
+
+				if (poolState && poolState.sqrtPriceX96 > 0n) {
+					return {
+						success: true,
+						pool: {
+							exists: true,
+							poolKey,
+							currentTick: poolState.tick,
+							sqrtPriceX96: poolState.sqrtPriceX96.toString(),
+							liquidity: poolState.liquidity.toString(),
+							token0Symbol: token0Info.symbol,
+							token1Symbol: token1Info.symbol,
+						},
+					};
+				}
+			}
+
+			// No pool found with any fee tier
+			return {
+				success: true,
+				pool: {
+					exists: false,
+					poolKey: {
+						currency0,
+						currency1,
+						fee: 3000, // Default
+						tickSpacing: 60,
+						hooks: NATIVE_ETH_ADDRESS,
+					},
+					currentTick: 0,
+					sqrtPriceX96: '0',
+					liquidity: '0',
+					token0Symbol: token0Info.symbol,
+					token1Symbol: token1Info.symbol,
+				},
+			};
+		} catch (error) {
+			console.error('Pool discovery error:', error);
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			};
+		}
+	}
+
+	/**
+	 * Check user's token balance
+	 */
+	private async checkBalance(
+		walletAddress: string,
+		token: string,
+		amount: bigint,
+		chainId: number
+	): Promise<{ sufficient: boolean; balance: bigint; required: bigint }> {
+		const client = this.getViemClient(chainId);
+
+		try {
+			let balance: bigint;
+
+			if (token === NATIVE_ETH_ADDRESS) {
+				// Native ETH balance
+				balance = await client.getBalance({
+					address: walletAddress as `0x${string}`,
+				});
+			} else {
+				// ERC20 balance
+				balance = (await client.readContract({
+					address: token as `0x${string}`,
+					abi: ERC20_ABI,
+					functionName: 'balanceOf',
+					args: [walletAddress as `0x${string}`],
+				})) as bigint;
+			}
+
+			return {
+				sufficient: balance >= amount,
+				balance,
+				required: amount,
+			};
+		} catch (error) {
+			console.error('Balance check error:', error);
+			throw new Error(`Failed to check balance for ${token}`);
+		}
+	}
+
+	/**
+	 * Check token allowance for spender
+	 */
+	private async checkAllowance(
+		walletAddress: string,
+		token: string,
+		spender: string,
+		chainId: number
+	): Promise<bigint> {
+		// Native ETH doesn't need approval
+		if (token === NATIVE_ETH_ADDRESS) {
+			return BigInt(MAX_UINT256);
+		}
+
+		const client = this.getViemClient(chainId);
+
+		try {
+			const allowance = (await client.readContract({
+				address: token as `0x${string}`,
+				abi: ERC20_ABI,
+				functionName: 'allowance',
+				args: [walletAddress as `0x${string}`, spender as `0x${string}`],
+			})) as bigint;
+
+			return allowance;
+		} catch (error) {
+			console.error('Allowance check error:', error);
+			throw new Error(`Failed to check allowance for ${token}`);
+		}
+	}
+
+	/**
+	 * Generate approval transaction
+	 */
+	async approveToken(
+		userId: string,
+		params: V4ApprovalParams,
+		walletService: WalletService
+	): Promise<V4ApprovalResult> {
+		const { token, amount, chainId } = params;
+
+		try {
+			// Validate chain
+			const config = V4_CHAIN_CONFIGS[chainId];
+			if (!config) {
+				return {
+					success: false,
+					error: `Unsupported chain ID: ${chainId}`,
+				};
+			}
+
+			// Native ETH doesn't need approval
+			if (token === NATIVE_ETH_ADDRESS) {
+				return {
+					success: false,
+					error: 'Native ETH does not require approval',
+				};
+			}
+
+			// Get token info
+			const tokenInfo = await this.getTokenInfo(token, chainId);
+
+			// Parse amount (use max uint256 for unlimited approval)
+			const amountWei = amount === 'unlimited' ? BigInt(MAX_UINT256) : parseUnits(amount, tokenInfo.decimals);
+
+			// Generate approval calldata
+			const data = encodeFunctionData({
+				abi: ERC20_ABI,
+				functionName: 'approve',
+				args: [config.positionManagerAddress as `0x${string}`, amountWei],
+			});
+
+			// Execute transaction via WalletService
+			const result = await walletService.transact(userId, {
+				to: token,
+				value: '0',
+				data,
+				chainId,
+			});
+
+			if (result.success && result.hash) {
+				return {
+					success: true,
+					txHash: result.hash,
+				};
+			} else {
+				return {
+					success: false,
+					error: result.error || 'Approval transaction failed',
+				};
+			}
+		} catch (error) {
+			console.error('Approval error:', error);
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			};
+		}
+	}
+
+	/**
+	 * Calculate full-range ticks
+	 */
+	private calculateFullRangeTicks(tickSpacing: number): { tickLower: number; tickUpper: number } {
+		const MIN_TICK = -887272;
+		const MAX_TICK = 887272;
+
+		return {
+			tickLower: nearestUsableTick(MIN_TICK, tickSpacing),
+			tickUpper: nearestUsableTick(MAX_TICK, tickSpacing),
+		};
+	}
+
+	/**
+	 * Get block explorer URL
+	 */
+	private getExplorerUrl(txHash: string, chainId: number): string {
+		const explorers: Record<number, string> = {
+			1: 'https://etherscan.io',
+			56: 'https://bscscan.com',
+			8453: 'https://basescan.org',
+			42161: 'https://arbiscan.io',
+			130: 'https://unichain.org/explorer',
+		};
+
+		const baseUrl = explorers[chainId] || 'https://etherscan.io';
+		return `${baseUrl}/tx/${txHash}`;
+	}
+
+	/**
+	 * Mint position (Simple Mode)
+	 */
+	async mintPosition(
+		userId: string,
+		params: V4MintSimpleParams,
+		walletService: WalletService
+	): Promise<V4MintResult> {
+		const { token0, token1, amount0Desired, amount1Desired, chainId, slippageTolerance = 0.5, deadline } = params;
+
+		try {
+			// Validate chain
+			const config = V4_CHAIN_CONFIGS[chainId];
+			if (!config) {
+				return {
+					success: false,
+					error: `Unsupported chain ID: ${chainId}`,
+				};
+			}
+
+			// Get session
+			const session = walletService.getSession(userId);
+			if (!session) {
+				return {
+					success: false,
+					error: ErrorCodes.SESSION_NOT_FOUND,
+				};
+			}
+
+			// Step 1: Discover pool
+			const poolDiscovery = await this.discoverPool({ token0, token1, chainId });
+			if (!poolDiscovery.success || !poolDiscovery.pool || !poolDiscovery.pool.exists) {
+				return {
+					success: false,
+					error: 'No pool found for this token pair. Try different tokens or fee tiers.',
+				};
+			}
+
+			const pool = poolDiscovery.pool;
+
+			// Step 2: Get token info
+			const [token0Info, token1Info] = await Promise.all([
+				this.getTokenInfo(pool.poolKey.currency0, chainId),
+				this.getTokenInfo(pool.poolKey.currency1, chainId),
+			]);
+
+			// Parse amounts
+			const amount0Wei = parseUnits(amount0Desired, token0Info.decimals);
+			const amount1Wei = parseUnits(amount1Desired, token1Info.decimals);
+
+			// Step 3: Check balances
+			const [balance0Check, balance1Check] = await Promise.all([
+				this.checkBalance(session.walletAddress, pool.poolKey.currency0, amount0Wei, chainId),
+				this.checkBalance(session.walletAddress, pool.poolKey.currency1, amount1Wei, chainId),
+			]);
+
+			if (!balance0Check.sufficient) {
+				return {
+					success: false,
+					error: `Insufficient ${token0Info.symbol} balance. Required: ${formatUnits(
+						balance0Check.required,
+						token0Info.decimals
+					)}, Available: ${formatUnits(balance0Check.balance, token0Info.decimals)}`,
+				};
+			}
+
+			if (!balance1Check.sufficient) {
+				return {
+					success: false,
+					error: `Insufficient ${token1Info.symbol} balance. Required: ${formatUnits(
+						balance1Check.required,
+						token1Info.decimals
+					)}, Available: ${formatUnits(balance1Check.balance, token1Info.decimals)}`,
+				};
+			}
+
+			// Step 4: Check allowances (skip native ETH)
+			const positionManager = config.positionManagerAddress;
+
+			if (pool.poolKey.currency0 !== NATIVE_ETH_ADDRESS) {
+				const allowance0 = await this.checkAllowance(
+					session.walletAddress,
+					pool.poolKey.currency0,
+					positionManager,
+					chainId
+				);
+				if (allowance0 < amount0Wei) {
+					return {
+						success: false,
+						error: `${token0Info.symbol} not approved. Call /api/v4/approve first with token=${pool.poolKey.currency0}`,
+					};
+				}
+			}
+
+			if (pool.poolKey.currency1 !== NATIVE_ETH_ADDRESS) {
+				const allowance1 = await this.checkAllowance(
+					session.walletAddress,
+					pool.poolKey.currency1,
+					positionManager,
+					chainId
+				);
+				if (allowance1 < amount1Wei) {
+					return {
+						success: false,
+						error: `${token1Info.symbol} not approved. Call /api/v4/approve first with token=${pool.poolKey.currency1}`,
+					};
+				}
+			}
+
+			// Step 5: Calculate full-range ticks
+			const { tickLower, tickUpper } = this.calculateFullRangeTicks(pool.poolKey.tickSpacing);
+
+			// Step 6: Create SDK objects
+			const token0Sdk = new Token(chainId, pool.poolKey.currency0, token0Info.decimals, token0Info.symbol);
+			const token1Sdk = new Token(chainId, pool.poolKey.currency1, token1Info.decimals, token1Info.symbol);
+
+			const poolSdk = new Pool(
+				token0Sdk,
+				token1Sdk,
+				pool.poolKey.fee,
+				pool.poolKey.tickSpacing,
+				pool.poolKey.hooks,
+				JSBI.BigInt(pool.sqrtPriceX96),
+				JSBI.BigInt(pool.liquidity),
+				pool.currentTick
+			);
+
+			const positionSdk = Position.fromAmounts({
+				pool: poolSdk,
+				tickLower,
+				tickUpper,
+				amount0: JSBI.BigInt(amount0Wei.toString()),
+				amount1: JSBI.BigInt(amount1Wei.toString()),
+				useFullPrecision: true,
+			});
+
+			// Step 7: Generate mint calldata using SDK
+			const deadlineTimestamp = deadline || Math.floor(Date.now() / 1000) + 1200; // 20 minutes
+			const slippagePercent = new Percent(Math.floor(slippageTolerance * 100), 10000);
+
+			const { calldata, value } = V4PositionManager.addCallParameters(positionSdk, {
+				recipient: session.walletAddress as `0x${string}`,
+				deadline: deadlineTimestamp.toString(),
+				slippageTolerance: slippagePercent,
+			});
+
+			// Step 8: Execute transaction
+			const result = await walletService.transact(userId, {
+				to: positionManager,
+				value: value.toString(),
+				data: calldata,
+				chainId,
+			});
+
+			if (result.success && result.hash) {
+				return {
+					success: true,
+					txHash: result.hash,
+					chainId,
+					expectedPosition: {
+						poolKey: pool.poolKey,
+						tickLower,
+						tickUpper,
+						liquidity: positionSdk.liquidity.toString(),
+						amount0: amount0Desired,
+						amount1: amount1Desired,
+					},
+					explorer: this.getExplorerUrl(result.hash, chainId),
+				};
+			} else {
+				return {
+					success: false,
+					error: result.error || 'Minting transaction failed',
+				};
+			}
+		} catch (error) {
+			console.error('Mint position error:', error);
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error during minting',
+			};
+		}
+	}
+}
