@@ -221,30 +221,19 @@ export function createRouter(
 
       const result = await uniswapV4Service.getPositions(walletAddress, chainId);
 
-      if (result.success && result.positions) {
-        const responseData: V4PositionsResponseData = {
-          walletAddress,
-          positions: result.positions,
-          totalValueUsd: result.totalValueUsd || 0,
-          totalFeesUsd: result.totalFeesUsd || 0,
-          timestamp: new Date().toISOString(),
-          chainErrors: result.chainErrors,
-        };
+      const responseData: V4PositionsResponseData = {
+        walletAddress,
+        positions: result.positions,
+        timestamp: new Date().toISOString(),
+        chainErrors: result.chainErrors,
+      };
 
-        const response: ApiResponse<V4PositionsResponseData> = {
-          success: true,
-          data: responseData,
-          message: `Found ${result.positions.length} positions`,
-        };
-        res.status(200).json(response);
-      } else {
-        const response: ApiResponse = {
-          success: false,
-          message: 'Failed to fetch positions',
-          error: result.error || ErrorCodes.INTERNAL_ERROR,
-        };
-        res.status(500).json(response);
-      }
+      const response: ApiResponse<V4PositionsResponseData> = {
+        success: true,
+        data: responseData,
+        message: `Found ${result.positions.length} position${result.positions.length !== 1 ? 's' : ''}`,
+      };
+      res.status(200).json(response);
     });
   }
 
