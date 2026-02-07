@@ -12,12 +12,12 @@ describe('PolicyConfig', () => {
 			expect(condition.field).toBe('chain_id');
 			expect(condition.operator).toBe('in');
 
-			const allowedChains = condition.value as number[];
-			expect(allowedChains).toContain(1); // ethereum
-			expect(allowedChains).toContain(42161); // arbitrum
-			expect(allowedChains).toContain(8453); // base
-			expect(allowedChains).toContain(130); // unichain
-			expect(allowedChains).toContain(56); // bsc
+			const allowedChains = condition.value as string[];
+			expect(allowedChains).toContain('1'); // ethereum
+			expect(allowedChains).toContain('42161'); // arbitrum
+			expect(allowedChains).toContain('8453'); // base
+			expect(allowedChains).toContain('130'); // unichain
+			expect(allowedChains).toContain('56'); // bsc
 		});
 	});
 

@@ -128,55 +128,34 @@ export interface UniswapV4ChainConfig {
 	rpcUrl: string;
 }
 
-// Position data structures
-export interface TokenAmount {
-	token: string; // Contract address
-	symbol: string; // e.g., "USDC", "WETH"
-	amount: string; // Human-readable amount
-	decimals: number;
-	usdValue: number;
-}
-
+// Uniswap V4 Position types (following official SDK guide)
 export interface V4Position {
 	tokenId: string;
 	chainId: number;
 	chainName: string;
-	poolAddress: string;
-	token0: TokenAmount;
-	token1: TokenAmount;
-	liquidity: string;
+	poolKey: {
+		currency0: string;
+		currency1: string;
+		fee: number;
+		tickSpacing: number;
+		hooks: string;
+	};
 	tickLower: number;
 	tickUpper: number;
-	feesUsd: number; // Accumulated fees in USD
-	totalValueUsd: number; // Total position value
+	liquidity: string;
 }
 
-// Service result type (follows existing pattern)
 export interface V4PositionsResult {
 	success: boolean;
-	positions?: V4Position[];
-	totalValueUsd?: number;
-	totalFeesUsd?: number;
-	error?: string;
+	positions: V4Position[];
 	chainErrors?: { chainId: number; error: string }[];
 }
 
-// API response data type
 export interface V4PositionsResponseData {
 	walletAddress: string;
 	positions: V4Position[];
-	totalValueUsd: number;
-	totalFeesUsd: number;
 	timestamp: string;
 	chainErrors?: { chainId: number; error: string }[];
-}
-
-// Price cache
-export interface PriceData {
-	address: string;
-	symbol: string;
-	priceUsd: number;
-	timestamp: number;
 }
 
 // Chain configuration
@@ -189,50 +168,7 @@ export interface UniswapV4ChainConfig {
 	rpcUrl: string;
 }
 
-// Position data structures
-export interface TokenAmount {
-	token: string; // Contract address
-	symbol: string; // e.g., "USDC", "WETH"
-	amount: string; // Human-readable amount
-	decimals: number;
-	usdValue: number;
-}
-
-export interface V4Position {
-	tokenId: string;
-	chainId: number;
-	chainName: string;
-	poolAddress: string;
-	token0: TokenAmount;
-	token1: TokenAmount;
-	liquidity: string;
-	tickLower: number;
-	tickUpper: number;
-	feesUsd: number; // Accumulated fees in USD
-	totalValueUsd: number; // Total position value
-}
-
-// Service result type (follows existing pattern)
-export interface V4PositionsResult {
-	success: boolean;
-	positions?: V4Position[];
-	totalValueUsd?: number;
-	totalFeesUsd?: number;
-	error?: string;
-	chainErrors?: { chainId: number; error: string }[];
-}
-
-// API response data type
-export interface V4PositionsResponseData {
-	walletAddress: string;
-	positions: V4Position[];
-	totalValueUsd: number;
-	totalFeesUsd: number;
-	timestamp: string;
-	chainErrors?: { chainId: number; error: string }[];
-}
-
-// Price cache
+// Price cache (used by PriceService - kept for future use)
 export interface PriceData {
 	address: string;
 	symbol: string;
