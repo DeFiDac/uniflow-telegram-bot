@@ -1,62 +1,36 @@
 /**
  * Unit tests for UniswapV4Service
+ * Following official SDK guide: https://docs.uniswap.org/sdk/v4/guides/liquidity/position-fetching
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { UniswapV4Service } from '../../../src/core/UniswapV4Service';
-import { PriceService } from '../../../src/core/PriceService';
 import { V4Position } from '../../../src/core/types';
 
-// Mock factories (shared instances)
-const createMockPriceService = () => {
-	return {
-		getTokenPrices: vi.fn().mockResolvedValue(
-			new Map([
-				['0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 3000],
-				['0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 1],
-			])
-		),
-		clearCache: vi.fn(),
-		getCacheSize: vi.fn().mockReturnValue(0),
-	};
-};
-
-// Mock position data factory
+// Mock position data factory (simplified structure)
 const createMockPosition = (tokenId: string, chainId: number): V4Position => ({
 	tokenId,
 	chainId,
 	chainName: chainId === 1 ? 'Ethereum' : 'Base',
-	poolAddress: '0x1234...5678/0xabcd...efgh',
-	token0: {
-		token: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-		symbol: 'WETH',
-		amount: '1.5',
-		decimals: 18,
-		usdValue: 4500,
+	poolKey: {
+		currency0: '0x0000000000000000000000000000000000000000',
+		currency1: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+		fee: 500,
+		tickSpacing: 10,
+		hooks: '0x0000000000000000000000000000000000000000',
 	},
-	token1: {
-		token: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
-		symbol: 'USDC',
-		amount: '4500.0',
-		decimals: 6,
-		usdValue: 4500,
-	},
-	liquidity: '1000000',
 	tickLower: -887220,
 	tickUpper: 887220,
-	feesUsd: 90,
-	totalValueUsd: 9000,
+	liquidity: '1000000',
 });
 
 describe('UniswapV4Service', () => {
 	let service: UniswapV4Service;
-	let mockPriceService: ReturnType<typeof createMockPriceService>;
 	let getPositionsForChainSpy: any;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		mockPriceService = createMockPriceService();
-		service = new UniswapV4Service(mockPriceService as unknown as PriceService);
+		service = new UniswapV4Service();
 
 		// Mock the private getPositionsForChain method to avoid real network calls
 		getPositionsForChainSpy = vi
@@ -78,13 +52,8 @@ describe('UniswapV4Service', () => {
 	});
 
 	describe('constructor', () => {
-		it('should initialize with provided PriceService', () => {
+		it('should initialize successfully', () => {
 			expect(service).toBeDefined();
-		});
-
-		it('should initialize with default PriceService if not provided', () => {
-			const serviceDefault = new UniswapV4Service();
-			expect(serviceDefault).toBeDefined();
 		});
 	});
 
@@ -113,8 +82,7 @@ describe('UniswapV4Service', () => {
 
 			expect(result).toHaveProperty('success');
 			expect(result).toHaveProperty('positions');
-			expect(result).toHaveProperty('totalValueUsd');
-			expect(result).toHaveProperty('totalFeesUsd');
+			expect(Array.isArray(result.positions)).toBe(true);
 		});
 
 		it('should handle invalid chainId gracefully', async () => {

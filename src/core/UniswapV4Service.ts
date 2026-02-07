@@ -101,6 +101,8 @@ export class UniswapV4Service {
 			console.log(
 				`[UniswapV4Service] Querying subgraph for positions of ${walletAddress} on chain ${chainId}`
 			);
+			console.log(`[UniswapV4Service] Subgraph URL: ${config.subgraphUrl}`);
+			console.log(`[UniswapV4Service] Query variables:`, { owner: walletAddress.toLowerCase() });
 
 			const graphQLClient = new GraphQLClient(config.subgraphUrl);
 			const data = await graphQLClient.request<{
@@ -108,6 +110,8 @@ export class UniswapV4Service {
 			}>(GET_POSITIONS_QUERY, {
 				owner: walletAddress.toLowerCase(),
 			});
+
+			console.log(`[UniswapV4Service] GraphQL response:`, JSON.stringify(data, null, 2));
 
 			const tokenIds = data.positions.map((p) => p.tokenId);
 
