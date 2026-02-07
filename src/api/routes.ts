@@ -5,16 +5,26 @@
 import { Router, Request, Response } from 'express';
 import { WalletService } from '../core/WalletService';
 import { UniswapV4Service } from '../core/UniswapV4Service';
+import { UniswapV4MintService } from '../core/UniswapV4MintService';
 import {
   ApiResponse,
   ConnectResponseData,
   TransactResponseData,
   SessionResponseData,
   V4PositionsResponseData,
+  V4PoolDiscoveryResponseData,
+  V4ApprovalResponseData,
+  V4MintResponseData,
   ErrorCodes,
 } from '../core/types';
 import { SUPPORTED_CHAIN_IDS } from '../core/v4-config';
-import { validateUserId, validateTxParams } from './middleware';
+import {
+  validateUserId,
+  validateTxParams,
+  validatePoolDiscoveryParams,
+  validateApprovalParams,
+  validateMintParams,
+} from './middleware';
 
 /**
  * Strictly validate and parse chainId from string
@@ -37,7 +47,8 @@ function parseChainIdStrict(raw: string): number | null {
 
 export function createRouter(
   walletService: WalletService,
-  uniswapV4Service?: UniswapV4Service
+  uniswapV4Service?: UniswapV4Service,
+  uniswapV4MintService?: UniswapV4MintService
 ): Router {
   const router = Router();
 
@@ -170,6 +181,143 @@ export function createRouter(
     };
     res.status(200).json(response);
   });
+
+  /**
+   * GET /api/v4/pool-info?token0=0x...&token1=0x...&chainId=1
+   * Discover pool information for a token pair
+   */
+  if (uniswapV4MintService) {
+    router.get(
+      '/v4/pool-info',
+      validatePoolDiscoveryParams,
+      async (req: Request, res: Response) => {
+        const { token0, token1, chainId } = req.query;
+        const result = await uniswapV4MintService.discoverPool({
+          token0: token0 as string,
+          token1: token1 as string,
+          chainId: Number(chainId),
+        });
+
+        if (result.success && result.pool) {
+          const response: ApiResponse<V4PoolDiscoveryResponseData> = {
+            success: true,
+            data: { pool: result.pool },
+            message: result.pool.exists
+              ? `Pool found with fee ${result.pool.poolKey.fee}`
+              : 'No pool exists for this token pair',
+          };
+          res.status(200).json(response);
+        } else {
+          const response: ApiResponse = {
+            success: false,
+            message: 'Pool discovery failed',
+            error: result.error || ErrorCodes.INTERNAL_ERROR,
+          };
+          res.status(500).json(response);
+        }
+      }
+    );
+
+    /**
+     * POST /api/v4/approve
+     * Approve tokens for Uniswap V4 PositionManager
+     */
+    router.post(
+      '/v4/approve',
+      validateUserId,
+      validateApprovalParams,
+      async (req: Request, res: Response) => {
+        const { userId, approvalParams } = req.body;
+        const result = await uniswapV4MintService.approveToken(
+          userId,
+          approvalParams,
+          walletService
+        );
+
+        if (result.success && result.txHash) {
+          const explorerUrls: Record<number, string> = {
+            1: 'https://etherscan.io',
+            56: 'https://bscscan.com',
+            8453: 'https://basescan.org',
+            42161: 'https://arbiscan.io',
+            130: 'https://unichain.org/explorer',
+          };
+          const baseUrl = explorerUrls[approvalParams.chainId] || 'https://etherscan.io';
+          const explorerUrl = `${baseUrl}/tx/${result.txHash}`;
+
+          const response: ApiResponse<V4ApprovalResponseData> = {
+            success: true,
+            data: {
+              txHash: result.txHash,
+              explorer: explorerUrl,
+            },
+            message: 'Token approved successfully',
+          };
+          res.status(200).json(response);
+        } else if (result.error === ErrorCodes.SESSION_NOT_FOUND) {
+          const response: ApiResponse = {
+            success: false,
+            message: 'No active session. Please connect first.',
+            error: ErrorCodes.SESSION_NOT_FOUND,
+          };
+          res.status(401).json(response);
+        } else {
+          const response: ApiResponse = {
+            success: false,
+            message: 'Approval failed',
+            error: result.error || ErrorCodes.TRANSACTION_FAILED,
+          };
+          res.status(500).json(response);
+        }
+      }
+    );
+
+    /**
+     * POST /api/v4/mint
+     * Mint a new Uniswap V4 liquidity position
+     */
+    router.post(
+      '/v4/mint',
+      validateUserId,
+      validateMintParams,
+      async (req: Request, res: Response) => {
+        const { userId, mintParams } = req.body;
+        const result = await uniswapV4MintService.mintPosition(
+          userId,
+          mintParams,
+          walletService
+        );
+
+        if (result.success && result.txHash && result.expectedPosition) {
+          const response: ApiResponse<V4MintResponseData> = {
+            success: true,
+            data: {
+              txHash: result.txHash,
+              chainId: result.chainId!,
+              expectedPosition: result.expectedPosition,
+              explorer: result.explorer!,
+            },
+            message: 'Position minted successfully',
+          };
+          res.status(200).json(response);
+        } else if (result.error === ErrorCodes.SESSION_NOT_FOUND) {
+          const response: ApiResponse = {
+            success: false,
+            message: 'No active session. Please connect first.',
+            error: ErrorCodes.SESSION_NOT_FOUND,
+          };
+          res.status(401).json(response);
+        } else {
+          const response: ApiResponse = {
+            success: false,
+            message: 'Minting failed',
+            error: result.error || ErrorCodes.TRANSACTION_FAILED,
+          };
+          res.status(500).json(response);
+        }
+      }
+    );
+  }
 
   /**
    * GET /api/v4/positions/:walletAddress?chainId=1

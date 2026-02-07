@@ -23,6 +23,7 @@
   "dependencies": {
     "@privy-io/node": "^0.8.0",
     "@uniswap/sdk-core": "^7.10.1",
+    "@uniswap/v3-sdk": "^3.16.1",
     "@uniswap/v4-sdk": "^1.27.0",
     "axios": "^1.13.4",
     "dotenv": "^17.2.3",
