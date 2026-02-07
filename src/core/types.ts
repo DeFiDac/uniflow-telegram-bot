@@ -266,6 +266,6 @@ export interface V4ApprovalResponseData {
 export interface V4MintResponseData {
 	txHash: string;
 	chainId: number;
-	expectedPosition: V4MintResult['expectedPosition'];
+	expectedPosition: NonNullable<V4MintResult['expectedPosition']>;
 	explorer: string;
 }
