@@ -17,6 +17,7 @@ Built with TypeScript, Express, and @privy-io/node.
 | `POST` | `/api/transact` | Execute a transaction |
 | `POST` | `/api/disconnect` | End user session |
 | `GET` | `/api/session/:userId` | Check if user has active session |
+| `GET` | `/api/v4/positions/:walletAddress` | Get Uniswap V4 positions for a wallet |
 
 ### POST /api/connect
 
@@ -105,6 +106,59 @@ Check if user has an active session.
 }
 ```
 
+### GET /api/v4/positions/:walletAddress
+
+Fetch Uniswap V4 liquidity positions for a wallet address.
+
+**Query Parameters:**
+- `chainId` (optional): Specific chain ID to query (1, 56, 8453, 42161, 130). If omitted, queries all supported chains.
+
+**Example Request:**
+```bash
+# Query all chains
+GET /api/v4/positions/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
+
+# Query specific chain (Ethereum)
+GET /api/v4/positions/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045?chainId=1
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "walletAddress": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+    "positions": [
+      {
+        "tokenId": "8472",
+        "chainId": 1,
+        "chainName": "Ethereum",
+        "poolKey": {
+          "currency0": "0x0000000000000000000000000000000000000000",
+          "currency1": "0xf9C8631fBA291Bac14ED549a2DDe7C7F2DDFf1A8",
+          "fee": 500,
+          "tickSpacing": 10,
+          "hooks": "0x0000000000000000000000000000000000000000"
+        },
+        "tickLower": -184220,
+        "tickUpper": 207220,
+        "liquidity": "15196412823029214828706"
+      }
+    ],
+    "timestamp": "2026-02-07T06:36:59.269Z",
+    "chainErrors": []
+  },
+  "message": "Found 1 position"
+}
+```
+
+**Supported Chains:**
+- Ethereum (Chain ID: 1)
+- BSC (Chain ID: 56)
+- Base (Chain ID: 8453)
+- Arbitrum (Chain ID: 42161)
+- Unichain (Chain ID: 130)
+
 ## Environment Variables
 
 | Variable | Required | Description |
@@ -113,7 +167,17 @@ Check if user has an active session.
 | `PRIVY_APP_SECRET` | ✅ | Privy application secret |
 | `PRIVY_SIGNER_ID` | ✅ | Privy signer ID for agentic transactions |
 | `PRIVY_SIGNER_PRIVATE_KEY` | ✅ | Privy authorization private key for server-side signing |
+| `PRIVY_POLICY_ID` | ❌ | Privy policy ID (auto-created if not set) |
+| `THE_GRAPH_API_KEY` | ✅ | The Graph API key for Uniswap V4 subgraphs |
+| `INFURA_API_KEY` | ❌ | Infura API key (falls back to public RPCs) |
+| `INFURA_ETHEREUM_RPC_URL` | ❌ | Infura Ethereum base URL (default: https://mainnet.infura.io/v3/) |
+| `INFURA_BSC_RPC_URL` | ❌ | Infura BSC base URL (default: https://bsc-mainnet.infura.io/v3/) |
+| `INFURA_BASE_RPC_URL` | ❌ | Infura Base base URL (default: https://base-mainnet.infura.io/v3/) |
+| `INFURA_ARBITRUM_RPC_URL` | ❌ | Infura Arbitrum base URL (default: https://arbitrum-mainnet.infura.io/v3/) |
+| `INFURA_UNICHAIN_RPC_URL` | ❌ | Infura Unichain base URL (default: https://unichain-mainnet.infura.io/v3/) |
 | `PORT` | ❌ | HTTP server port (default: 3000) |
+
+**Note:** Infura RPC URLs are constructed as `{INFURA_*_RPC_URL}{INFURA_API_KEY}`. If not configured, the service falls back to public RPC endpoints.
 
 ## Running
 
@@ -251,5 +315,46 @@ The server will display a detailed error box with specific troubleshooting steps
 │  ┌───────▼───────┐  ┌───────────────┐               │
 │  │  Privy Client │  │   Sessions    │               │
 │  └───────────────┘  └───────────────┘               │
+│                                                      │
+│  ┌──────────────────────────────────┐               │
+│  │    UniswapV4Service              │               │
+│  │  (Position fetching via          │               │
+│  │   The Graph + on-chain calls)    │               │
+│  └───────┬──────────────────────────┘               │
+│          │                                           │
+│  ┌───────▼────────┐  ┌──────────────┐               │
+│  │ GraphQL Client │  │ Viem Client  │               │
+│  │ (The Graph)    │  │ (RPC calls)  │               │
+│  └────────────────┘  └──────────────┘               │
 └─────────────────────────────────────────────────────┘
+```
+
+## Uniswap V4 Integration
+
+UniFlow integrates with Uniswap V4 to fetch liquidity positions across multiple chains. The implementation follows the [official Uniswap V4 SDK guide](https://docs.uniswap.org/sdk/v4/guides/liquidity/position-fetching).
+
+### How It Works
+
+1. **Position Discovery**: Queries The Graph subgraphs to find position token IDs owned by a wallet
+2. **Position Details**: Fetches on-chain data for each position using the Position Manager contract:
+   - Pool configuration (currencies, fee tier, hooks)
+   - Position range (tick lower/upper)
+   - Current liquidity
+
+### Data Sources
+
+- **The Graph**: Subgraph queries for position ownership
+- **On-chain RPC**: Contract calls for position details and liquidity
+- **Supported Networks**: Ethereum, BSC, Base, Arbitrum, Unichain
+
+### Configuration
+
+Set up your `.env` file with the required credentials:
+
+```bash
+# Required for position discovery
+THE_GRAPH_API_KEY=your_thegraph_api_key
+
+# Optional - improves reliability (falls back to public RPCs)
+INFURA_API_KEY=your_infura_project_id
 ```
