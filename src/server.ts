@@ -8,6 +8,7 @@ require('dotenv').config();
 import express from 'express';
 import { PrivyClient } from '@privy-io/node';
 import { WalletService, PolicyManager, UniswapV4Service } from './core';
+import { UniswapV4MintService } from './core/UniswapV4MintService';
 import { createRouter, errorHandler, requestLogger } from './api';
 
 // Validate critical environment variables
@@ -40,8 +41,9 @@ const privy = new PrivyClient({
 	appSecret: process.env.PRIVY_APP_SECRET ?? '',
 });
 
-// Initialize UniswapV4Service
+// Initialize Uniswap V4 Services
 const uniswapV4Service = new UniswapV4Service();
+const uniswapV4MintService = new UniswapV4MintService();
 
 // Initialize Express app
 const app: express.Express = express();
@@ -124,7 +126,7 @@ async function startServer() {
 	walletService = new WalletService(privy, undefined, policyManager.getPolicyIds());
 
 	// API routes
-	app.use('/api', createRouter(walletService, uniswapV4Service));
+	app.use('/api', createRouter(walletService, uniswapV4Service, uniswapV4MintService));
 
 	// Error handler (must be last)
 	app.use(errorHandler);
@@ -139,6 +141,9 @@ async function startServer() {
 		console.log(`   POST /api/disconnect              - End session`);
 		console.log(`   GET  /api/session/:userId         - Check session`);
 		console.log(`   GET  /api/v4/positions/:address   - Get Uniswap V4 positions`);
+		console.log(`   GET  /api/v4/pool-info            - Discover pool for token pair`);
+		console.log(`   POST /api/v4/approve              - Approve tokens for minting`);
+		console.log(`   POST /api/v4/mint                 - Mint Uniswap V4 position`);
 	});
 }
 
