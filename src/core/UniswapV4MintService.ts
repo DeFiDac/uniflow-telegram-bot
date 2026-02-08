@@ -594,9 +594,9 @@ export class UniswapV4MintService {
 			const token0Info = { symbol: pool.token0Symbol, decimals: pool.token0Decimals };
 			const token1Info = { symbol: pool.token1Symbol, decimals: pool.token1Decimals };
 
-			// Parse amounts (using correctly mapped amounts)
-			const amount0Wei = parseUnits(amount0DesiredForPool, token0Info.decimals);
-			const amount1Wei = parseUnits(amount1DesiredForPool, token1Info.decimals);
+			// Amounts are already in smallest token units (wei for ETH, raw units for ERC20)
+			const amount0Wei = BigInt(amount0DesiredForPool);
+			const amount1Wei = BigInt(amount1DesiredForPool);
 
 			// Step 3: Check balances
 			const [balance0Check, balance1Check] = await Promise.all([

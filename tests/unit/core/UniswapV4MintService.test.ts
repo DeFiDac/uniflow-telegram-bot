@@ -344,8 +344,8 @@ describe('UniswapV4MintService', () => {
 			const params: V4MintSimpleParams = {
 				token0: '0x0000000000000000000000000000000000000000',
 				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-				amount0Desired: '0.01',
-				amount1Desired: '25.0',
+				amount0Desired: '10000000000000000',
+				amount1Desired: '25000000',
 				chainId: 8453,
 			};
 
@@ -362,8 +362,8 @@ describe('UniswapV4MintService', () => {
 			const params: V4MintSimpleParams = {
 				token0: '0x0000000000000000000000000000000000000000',
 				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-				amount0Desired: '0.01',
-				amount1Desired: '25.0',
+				amount0Desired: '10000000000000000',
+				amount1Desired: '25000000',
 				chainId: 8453,
 			};
 
@@ -379,8 +379,8 @@ describe('UniswapV4MintService', () => {
 			const params: V4MintSimpleParams = {
 				token0: '0x0000000000000000000000000000000000000000',
 				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-				amount0Desired: '0.01',
-				amount1Desired: '25.0',
+				amount0Desired: '10000000000000000',
+				amount1Desired: '25000000',
 				chainId: 8453,
 			};
 
@@ -400,8 +400,8 @@ describe('UniswapV4MintService', () => {
 			const params: V4MintSimpleParams = {
 				token0: '0x0000000000000000000000000000000000000000',
 				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-				amount0Desired: '0.01',
-				amount1Desired: '25.0',
+				amount0Desired: '10000000000000000',
+				amount1Desired: '25000000',
 				chainId: 8453,
 			};
 
@@ -418,8 +418,8 @@ describe('UniswapV4MintService', () => {
 			const params: V4MintSimpleParams = {
 				token0: '0x0000000000000000000000000000000000000000',
 				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-				amount0Desired: '0.01',
-				amount1Desired: '25.0',
+				amount0Desired: '10000000000000000',
+				amount1Desired: '25000000',
 				chainId: 8453,
 			};
 
@@ -434,8 +434,8 @@ describe('UniswapV4MintService', () => {
 			const params: V4MintSimpleParams = {
 				token0: '0x0000000000000000000000000000000000000000',
 				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-				amount0Desired: '0.01',
-				amount1Desired: '25.0',
+				amount0Desired: '10000000000000000',
+				amount1Desired: '25000000',
 				chainId: 99999,
 			};
 
@@ -449,8 +449,8 @@ describe('UniswapV4MintService', () => {
 			const params: V4MintSimpleParams = {
 				token0: '0x0000000000000000000000000000000000000000',
 				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-				amount0Desired: '0.01',
-				amount1Desired: '25.0',
+				amount0Desired: '10000000000000000',
+				amount1Desired: '25000000',
 				chainId: 8453,
 				// No slippageTolerance specified - should use default 0.5%
 			};
@@ -464,8 +464,8 @@ describe('UniswapV4MintService', () => {
 			const params: V4MintSimpleParams = {
 				token0: '0x0000000000000000000000000000000000000000',
 				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-				amount0Desired: '0.01',
-				amount1Desired: '25.0',
+				amount0Desired: '10000000000000000',
+				amount1Desired: '25000000',
 				chainId: 8453,
 				slippageTolerance: 1.0, // Custom 1%
 			};
@@ -484,8 +484,8 @@ describe('UniswapV4MintService', () => {
 			const params: V4MintSimpleParams = {
 				token0: '0x0000000000000000000000000000000000000000',
 				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-				amount0Desired: '0.01',
-				amount1Desired: '25.0',
+				amount0Desired: '10000000000000000',
+				amount1Desired: '25000000',
 				chainId: 8453,
 			};
 
@@ -501,8 +501,8 @@ describe('UniswapV4MintService', () => {
 			const params: V4MintSimpleParams = {
 				token0: '0x0000000000000000000000000000000000000000',
 				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-				amount0Desired: '0.01',
-				amount1Desired: '25.0',
+				amount0Desired: '10000000000000000',
+				amount1Desired: '25000000',
 				chainId: 8453,
 			};
 
@@ -798,8 +798,8 @@ describe('UniswapV4MintService', () => {
 			const params: V4MintSimpleParams = {
 				token0: '0x0000000000000000000000000000000000000000',
 				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-				amount0Desired: '0.01',
-				amount1Desired: '25.0',
+				amount0Desired: '10000000000000000',
+				amount1Desired: '25000000',
 				chainId: 8453,
 			};
 
