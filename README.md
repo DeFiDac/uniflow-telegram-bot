@@ -19,7 +19,7 @@ Built with TypeScript, Express, and @privy-io/node.
 | `GET` | `/api/session/:userId` | Check if user has active session |
 | `GET` | `/api/v4/positions/:walletAddress` | Get Uniswap V4 positions for a wallet |
 | `GET` | `/api/v4/pool-info` | Discover pool information for token pair |
-| `POST` | `/api/v4/approve` | Approve tokens for Uniswap V4 PositionManager |
+| `POST` | `/api/v4/approve` | Approve tokens via Permit2 for Uniswap V4 PositionManager |
 | `POST` | `/api/v4/mint` | Mint a new Uniswap V4 liquidity position |
 
 ### POST /api/connect
@@ -243,7 +243,14 @@ curl "http://localhost:3000/api/v4/pool-info?token0=0x00000000000000000000000000
 
 ### POST /api/v4/approve
 
-Approve tokens for spending by the Uniswap V4 PositionManager contract. Required before minting positions with ERC20 tokens (not needed for native ETH).
+Approve tokens for spending by the Uniswap V4 PositionManager via Permit2. Required before minting positions with ERC20 tokens (not needed for native ETH).
+
+Uniswap V4's PositionManager settles ERC20 tokens through the [Permit2](https://docs.uniswap.org/contracts/permit2/overview) contract, not via direct `transferFrom`. This endpoint executes a two-step approval flow in a single API call:
+
+1. **ERC20 approve to Permit2** — `token.approve(PERMIT2, amount)`
+2. **Permit2 sub-allowance for PositionManager** — `permit2.approve(token, positionManager, amount, expiration)`
+
+The Permit2 sub-allowance is set with a 30-day expiration. The returned `txHash` is from the Permit2 approval transaction (step 2).
 
 **Request:**
 ```json
@@ -373,7 +380,7 @@ Token not approved:
 **Minting Flow:**
 
 1. **Discover Pool**: Call `GET /api/v4/pool-info` to verify pool exists
-2. **Approve Tokens** (if using ERC20): Call `POST /api/v4/approve` for each non-native token
+2. **Approve Tokens** (if using ERC20): Call `POST /api/v4/approve` for each non-native token. This handles both the ERC20-to-Permit2 approval and the Permit2-to-PositionManager sub-allowance in a single call.
 3. **Mint Position**: Call `POST /api/v4/mint` with desired amounts
 4. **Verify Position**: Call `GET /api/v4/positions/:address` to see the new position
 
@@ -387,7 +394,7 @@ curl -X POST http://localhost:3000/api/connect \
 # Step 2: Discover pool (ETH/USDC on Base with 0.3% fee tier)
 curl "http://localhost:3000/api/v4/pool-info?token0=0x0000000000000000000000000000000000000000&token1=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&chainId=8453&fee=3000"
 
-# Step 3: Approve USDC (not needed for ETH)
+# Step 3: Approve USDC via Permit2 (not needed for ETH)
 curl -X POST http://localhost:3000/api/v4/approve \
   -H "Content-Type: application/json" \
   -d '{
@@ -486,10 +493,12 @@ UniFlow implements conservative security policies on the Privy authorization key
    - Unichain (Chain ID: 130)
    - BSC (Chain ID: 56)
 
-2. **Contract Allowlist**: Interactions restricted to Uniswap V4 contracts only:
+2. **Contract Allowlist**: Interactions restricted to Uniswap V4 and Permit2 contracts only:
    - Pool Manager
    - Position Manager
    - State View
+   - Permit2 (`0x000000000022D473030F116dDEE9F6B43aC78BA3`) — required for ERC20 token approvals
+   - ERC20 token contracts — for `approve()` calls to Permit2
 
 3. **Transaction Value Limit**: Maximum 0.1 ETH per transaction
 
@@ -621,7 +630,7 @@ UniFlow provides comprehensive Uniswap V4 integration for both reading and creat
 **How It Works:**
 1. **Pool Discovery**: Automatically tries multiple fee tiers (500, 3000, 10000) to find existing pools. For better performance, specify the `fee` parameter to query a specific tier directly.
 2. **Balance Validation**: Checks user token balances before transactions
-3. **Approval Checking**: Verifies token approvals and provides clear instructions if needed
+3. **Approval Checking**: Verifies Permit2 sub-allowances and provides clear instructions if needed
 4. **Position Creation**: Mints full-range positions using Uniswap V4 SDK
 5. **Pre-transaction Validation**: Prevents failed transactions with helpful error messages
 
@@ -655,7 +664,7 @@ INFURA_API_KEY=your_infura_project_id
 ### Security Notes
 
 All minting transactions are protected by Privy policies that:
-- Restrict transactions to Uniswap V4 contracts only (PositionManager)
+- Restrict transactions to Uniswap V4 contracts, Permit2, and ERC20 token contracts only
 - Limit transaction values to 0.1 ETH maximum
 - Enforce chain allowlist (mainnet chains only)
 
