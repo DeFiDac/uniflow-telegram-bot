@@ -516,6 +516,71 @@ describe('UniswapV4MintService', () => {
 		});
 	});
 
+	describe('checkBalance coercion', () => {
+		it('should handle native ETH balance returned as number', async () => {
+			checkBalanceSpy.mockRestore();
+
+			const mockGetBalance = vi.fn().mockResolvedValue(2279961267478848); // number, not bigint
+			getViemClientSpy.mockReturnValue({
+				readContract: vi.fn(),
+				getBalance: mockGetBalance,
+			});
+
+			const result = await (service as any).checkBalance(
+				'0x1234567890123456789012345678901234567890',
+				'0x0000000000000000000000000000000000000000',
+				BigInt('100000000000000'), // 0.0001 ETH
+				8453
+			);
+
+			expect(result.sufficient).toBe(true);
+			expect(typeof result.balance).toBe('bigint');
+			expect(result.balance).toBe(BigInt(2279961267478848));
+		});
+
+		it('should handle ERC20 balance returned as hex string', async () => {
+			checkBalanceSpy.mockRestore();
+
+			const mockReadContract = vi.fn().mockResolvedValue('0xDE0B6B3A7640000'); // 1e18 as hex
+			getViemClientSpy.mockReturnValue({
+				readContract: mockReadContract,
+				getBalance: vi.fn(),
+			});
+
+			const result = await (service as any).checkBalance(
+				'0x1234567890123456789012345678901234567890',
+				'0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+				BigInt('500000000000000000'), // 0.5 ETH
+				8453
+			);
+
+			expect(result.sufficient).toBe(true);
+			expect(typeof result.balance).toBe('bigint');
+			expect(result.balance).toBe(BigInt('0xDE0B6B3A7640000'));
+		});
+
+		it('should handle balance already returned as bigint (no-op coercion)', async () => {
+			checkBalanceSpy.mockRestore();
+
+			const mockGetBalance = vi.fn().mockResolvedValue(BigInt('5000000000000000000'));
+			getViemClientSpy.mockReturnValue({
+				readContract: vi.fn(),
+				getBalance: mockGetBalance,
+			});
+
+			const result = await (service as any).checkBalance(
+				'0x1234567890123456789012345678901234567890',
+				'0x0000000000000000000000000000000000000000',
+				BigInt('1000000000000000000'),
+				8453
+			);
+
+			expect(result.sufficient).toBe(true);
+			expect(typeof result.balance).toBe('bigint');
+			expect(result.balance).toBe(BigInt('5000000000000000000'));
+		});
+	});
+
 	describe('error handling', () => {
 		it('should handle network errors in pool discovery', async () => {
 			// Mock getTokenInfo to throw error

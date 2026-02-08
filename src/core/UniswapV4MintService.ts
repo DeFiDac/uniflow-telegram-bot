@@ -385,17 +385,17 @@ export class UniswapV4MintService {
 
 			if (token === NATIVE_ETH_ADDRESS) {
 				// Native ETH balance
-				balance = await client.getBalance({
+				balance = BigInt(await client.getBalance({
 					address: walletAddress as `0x${string}`,
-				});
+				}));
 			} else {
 				// ERC20 balance
-				balance = (await client.readContract({
+				balance = BigInt(await client.readContract({
 					address: token as `0x${string}`,
 					abi: ERC20_ABI,
 					functionName: 'balanceOf',
 					args: [walletAddress as `0x${string}`],
-				})) as bigint;
+				}));
 			}
 
 			return {
