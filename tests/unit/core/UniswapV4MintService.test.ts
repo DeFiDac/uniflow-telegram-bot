@@ -259,11 +259,10 @@ describe('UniswapV4MintService', () => {
 	});
 
 	describe('approveToken', () => {
-		it('should generate approval transaction successfully', async () => {
-			mockWalletService.transact = vi.fn().mockResolvedValue({
-				success: true,
-				hash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-			});
+		it('should execute two-step Permit2 approval successfully', async () => {
+			mockWalletService.transact = vi.fn()
+				.mockResolvedValueOnce({ success: true, hash: '0xerc20hash' })   // ERC20 approve to Permit2
+				.mockResolvedValueOnce({ success: true, hash: '0xpermit2hash' }); // Permit2 approve for PositionManager
 
 			const params: V4ApprovalParams = {
 				token: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
@@ -274,8 +273,8 @@ describe('UniswapV4MintService', () => {
 			const result = await service.approveToken('test-user', params, mockWalletService);
 
 			expect(result.success).toBe(true);
-			expect(result.txHash).toBeDefined();
-			expect(mockWalletService.transact).toHaveBeenCalled();
+			expect(result.txHash).toBe('0xpermit2hash'); // Returns Permit2 tx hash
+			expect(mockWalletService.transact).toHaveBeenCalledTimes(2);
 		});
 
 		it('should reject approval for native ETH', async () => {
@@ -304,10 +303,10 @@ describe('UniswapV4MintService', () => {
 			expect(result.error).toContain('Unsupported chain ID');
 		});
 
-		it('should handle transaction failure', async () => {
+		it('should fail if ERC20 approval to Permit2 fails', async () => {
 			mockWalletService.transact = vi.fn().mockResolvedValue({
 				success: false,
-				error: 'Transaction failed',
+				error: 'ERC20 approve reverted',
 			});
 
 			const params: V4ApprovalParams = {
@@ -319,7 +318,26 @@ describe('UniswapV4MintService', () => {
 			const result = await service.approveToken('test-user', params, mockWalletService);
 
 			expect(result.success).toBe(false);
+			expect(result.error).toContain('ERC20 approve reverted');
+			expect(mockWalletService.transact).toHaveBeenCalledTimes(1); // Should not attempt Permit2 approve
+		});
+
+		it('should fail if Permit2 approval fails', async () => {
+			mockWalletService.transact = vi.fn()
+				.mockResolvedValueOnce({ success: true, hash: '0xerc20hash' })   // ERC20 succeeds
+				.mockResolvedValueOnce({ success: false, error: 'Permit2 reverted' }); // Permit2 fails
+
+			const params: V4ApprovalParams = {
+				token: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+				amount: '1000.0',
+				chainId: 8453,
+			};
+
+			const result = await service.approveToken('test-user', params, mockWalletService);
+
+			expect(result.success).toBe(false);
 			expect(result.error).toBeDefined();
+			expect(mockWalletService.transact).toHaveBeenCalledTimes(2);
 		});
 	});
 
@@ -785,10 +803,9 @@ describe('UniswapV4MintService', () => {
 		});
 
 		it('approveToken should return correct structure', async () => {
-			mockWalletService.transact = vi.fn().mockResolvedValue({
-				success: true,
-				hash: '0x123',
-			});
+			mockWalletService.transact = vi.fn()
+				.mockResolvedValueOnce({ success: true, hash: '0xerc20' })
+				.mockResolvedValueOnce({ success: true, hash: '0x123' });
 
 			const params: V4ApprovalParams = {
 				token: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',

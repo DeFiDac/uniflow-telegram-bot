@@ -18,7 +18,7 @@ import {
 	V4MintResult,
 	ErrorCodes,
 } from './types';
-import { V4_CHAIN_CONFIGS, STATE_VIEW_ABI, ERC20_ABI } from './v4-config';
+import { V4_CHAIN_CONFIGS, STATE_VIEW_ABI, ERC20_ABI, PERMIT2_ADDRESS, PERMIT2_ABI } from './v4-config';
 import { WalletService } from './WalletService';
 
 // Unichain chain config (not in viem yet)
@@ -426,17 +426,21 @@ export class UniswapV4MintService {
 		const client = this.getViemClient(chainId);
 
 		try {
-			const allowance = (await client.readContract({
-				address: token as `0x${string}`,
-				abi: ERC20_ABI,
+			const [amount] = (await client.readContract({
+				address: PERMIT2_ADDRESS as `0x${string}`,
+				abi: PERMIT2_ABI,
 				functionName: 'allowance',
-				args: [walletAddress as `0x${string}`, spender as `0x${string}`],
-			})) as bigint;
+				args: [
+					walletAddress as `0x${string}`,
+					token as `0x${string}`,
+					spender as `0x${string}`,
+				],
+			})) as readonly [bigint, number, number];
 
-			return allowance;
+			return amount;
 		} catch (error) {
-			console.error('Allowance check error:', error);
-			throw new Error(`Failed to check allowance for ${token}`);
+			console.error('Permit2 allowance check error:', error);
+			throw new Error(`Failed to check Permit2 allowance for ${token}`);
 		}
 	}
 
@@ -474,30 +478,58 @@ export class UniswapV4MintService {
 			// Parse amount (use max uint256 for unlimited approval)
 			const amountWei = amount === 'unlimited' ? BigInt(MAX_UINT256) : parseUnits(amount, tokenInfo.decimals);
 
-			// Generate approval calldata
-			const data = encodeFunctionData({
+			// Step 1: Approve ERC20 token to Permit2
+			const erc20ApproveData = encodeFunctionData({
 				abi: ERC20_ABI,
 				functionName: 'approve',
-				args: [config.positionManagerAddress as `0x${string}`, amountWei],
+				args: [PERMIT2_ADDRESS as `0x${string}`, amountWei],
 			});
 
-			// Execute transaction via WalletService
-			const result = await walletService.transact(userId, {
+			const erc20Result = await walletService.transact(userId, {
 				to: token,
 				value: '0',
-				data,
+				data: erc20ApproveData,
 				chainId,
 			});
 
-			if (result.success && result.hash) {
+			if (!erc20Result.success) {
+				return { success: false, error: erc20Result.error || 'ERC20 approval to Permit2 failed' };
+			}
+
+			// Step 2: Approve PositionManager via Permit2
+			// Permit2 uses uint160 for amounts — cap at max uint160
+			const MAX_UINT160 = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF');
+			const permit2Amount = amountWei > MAX_UINT160 ? MAX_UINT160 : amountWei;
+			// Set expiration to 30 days from now
+			const expiration = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+
+			const permit2ApproveData = encodeFunctionData({
+				abi: PERMIT2_ABI,
+				functionName: 'approve',
+				args: [
+					token as `0x${string}`,
+					config.positionManagerAddress as `0x${string}`,
+					permit2Amount,
+					expiration,
+				],
+			});
+
+			const permit2Result = await walletService.transact(userId, {
+				to: PERMIT2_ADDRESS,
+				value: '0',
+				data: permit2ApproveData,
+				chainId,
+			});
+
+			if (permit2Result.success && permit2Result.hash) {
 				return {
 					success: true,
-					txHash: result.hash,
+					txHash: permit2Result.hash,
 				};
 			} else {
 				return {
 					success: false,
-					error: result.error || 'Approval transaction failed',
+					error: permit2Result.error || 'Permit2 approval transaction failed',
 				};
 			}
 		} catch (error) {

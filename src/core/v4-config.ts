@@ -238,6 +238,40 @@ export const STATE_VIEW_ABI = [
 	},
 ] as const;
 
+// Permit2 canonical address (same on all EVM chains)
+export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+
+// Permit2 ABI - AllowanceTransfer interface used by V4 PositionManager
+export const PERMIT2_ABI = [
+	{
+		name: 'approve',
+		type: 'function',
+		stateMutability: 'nonpayable',
+		inputs: [
+			{ name: 'token', type: 'address' },
+			{ name: 'spender', type: 'address' },
+			{ name: 'amount', type: 'uint160' },
+			{ name: 'expiration', type: 'uint48' },
+		],
+		outputs: [],
+	},
+	{
+		name: 'allowance',
+		type: 'function',
+		stateMutability: 'view',
+		inputs: [
+			{ name: 'owner', type: 'address' },
+			{ name: 'token', type: 'address' },
+			{ name: 'spender', type: 'address' },
+		],
+		outputs: [
+			{ name: 'amount', type: 'uint160' },
+			{ name: 'expiration', type: 'uint48' },
+			{ name: 'nonce', type: 'uint48' },
+		],
+	},
+] as const;
+
 // ERC20 ABI - for token metadata and approvals
 export const ERC20_ABI = [
 	{
