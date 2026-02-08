@@ -197,6 +197,7 @@ curl "http://localhost:3000/api/v4/pool-info?token0=0x00000000000000000000000000
   "data": {
     "pool": {
       "exists": true,
+      "poolId": "0xe070797535b13431808f8fc81fdbe7b41362960ed0b55bc2b6117c49c51b7eb9",
       "poolKey": {
         "currency0": "0x0000000000000000000000000000000000000000",
         "currency1": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
