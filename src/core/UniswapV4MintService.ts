@@ -6,7 +6,7 @@
 import { createPublicClient, http, PublicClient, parseUnits, formatUnits, encodeFunctionData, encodeAbiParameters, keccak256 } from 'viem';
 import { mainnet, bsc, base, arbitrum } from 'viem/chains';
 import { Pool, Position, V4PositionManager } from '@uniswap/v4-sdk';
-import { Token, CurrencyAmount, Percent } from '@uniswap/sdk-core';
+import { Token, Ether, CurrencyAmount, Percent } from '@uniswap/sdk-core';
 import { nearestUsableTick } from '@uniswap/v3-sdk';
 import JSBI from 'jsbi';
 import {
@@ -582,6 +582,10 @@ export class UniswapV4MintService {
 
 			const pool = poolDiscovery.pool;
 
+			// Detect native ETH tokens
+			const isToken0Native = pool.poolKey.currency0 === NATIVE_ETH_ADDRESS;
+			const isToken1Native = pool.poolKey.currency1 === NATIVE_ETH_ADDRESS;
+
 			// Detect if tokens were swapped during pool discovery
 			// discoverPool sorts tokens (currency0 < currency1), so we need to map amounts accordingly
 			const tokensSwapped = token0.toLowerCase() !== pool.poolKey.currency0.toLowerCase();
@@ -627,7 +631,7 @@ export class UniswapV4MintService {
 			// Step 4: Check allowances (skip native ETH)
 			const positionManager = config.positionManagerAddress;
 
-			if (pool.poolKey.currency0 !== NATIVE_ETH_ADDRESS) {
+			if (!isToken0Native) {
 				const allowance0 = await this.checkAllowance(
 					session.walletAddress,
 					pool.poolKey.currency0,
@@ -642,7 +646,7 @@ export class UniswapV4MintService {
 				}
 			}
 
-			if (pool.poolKey.currency1 !== NATIVE_ETH_ADDRESS) {
+			if (!isToken1Native) {
 				const allowance1 = await this.checkAllowance(
 					session.walletAddress,
 					pool.poolKey.currency1,
@@ -660,9 +664,13 @@ export class UniswapV4MintService {
 			// Step 5: Calculate full-range ticks
 			const { tickLower, tickUpper } = this.calculateFullRangeTicks(pool.poolKey.tickSpacing);
 
-			// Step 6: Create SDK objects
-			const token0Sdk = new Token(chainId, pool.poolKey.currency0, token0Info.decimals, token0Info.symbol);
-			const token1Sdk = new Token(chainId, pool.poolKey.currency1, token1Info.decimals, token1Info.symbol);
+			// Step 6: Create SDK objects (use Ether.onChain() for native ETH)
+			const token0Sdk = isToken0Native
+				? Ether.onChain(chainId)
+				: new Token(chainId, pool.poolKey.currency0, token0Info.decimals, token0Info.symbol);
+			const token1Sdk = isToken1Native
+				? Ether.onChain(chainId)
+				: new Token(chainId, pool.poolKey.currency1, token1Info.decimals, token1Info.symbol);
 
 			const poolSdk = new Pool(
 				token0Sdk,
@@ -688,13 +696,32 @@ export class UniswapV4MintService {
 			const deadlineTimestamp = deadline || Math.floor(Date.now() / 1000) + 1200; // 20 minutes
 			const slippagePercent = new Percent(Math.floor(slippageTolerance * 100), 10000);
 
+			const nativeCurrency = isToken0Native || isToken1Native ? Ether.onChain(chainId) : undefined;
 			const { calldata, value } = V4PositionManager.addCallParameters(positionSdk, {
 				recipient: session.walletAddress as `0x${string}`,
 				deadline: deadlineTimestamp.toString(),
 				slippageTolerance: slippagePercent,
+				...(nativeCurrency ? { useNative: nativeCurrency } : {}),
 			});
 
-			// Step 8: Execute transaction
+			// Step 8: Simulate transaction before broadcasting
+			const client = this.getViemClient(chainId);
+			try {
+				await client.call({
+					account: session.walletAddress as `0x${string}`,
+					to: positionManager as `0x${string}`,
+					data: calldata as `0x${string}`,
+					value: BigInt(value.toString()),
+				});
+			} catch (simError) {
+				console.error('[MintService] Transaction simulation failed:', simError);
+				return {
+					success: false,
+					error: `Transaction simulation failed: ${simError instanceof Error ? simError.message : 'Unknown reason'}`,
+				};
+			}
+
+			// Step 9: Execute transaction
 			const result = await walletService.transact(userId, {
 				to: positionManager,
 				value: value.toString(),

@@ -23,6 +23,7 @@ const createMockWalletService = () => {
 };
 
 // Mock pool discovery result factory
+// Uses tick=0, sqrtPriceX96=2^96 (1:1 price) — valid for both Token and Ether SDK types
 const createMockPoolResult = (exists: boolean): V4PoolDiscoveryResult => ({
 	success: true,
 	pool: {
@@ -34,8 +35,8 @@ const createMockPoolResult = (exists: boolean): V4PoolDiscoveryResult => ({
 			tickSpacing: 60,
 			hooks: '0x0000000000000000000000000000000000000000',
 		},
-		currentTick: 204589,
-		sqrtPriceX96: '1461446703485210103287273052203988822378723970341',
+		currentTick: 0,
+		sqrtPriceX96: '79228162514264337593543950336',
 		liquidity: '123456789',
 		token0Symbol: 'ETH',
 		token1Symbol: 'USDC',
@@ -64,6 +65,7 @@ describe('UniswapV4MintService', () => {
 			.mockReturnValue({
 				readContract: vi.fn(),
 				getBalance: vi.fn(),
+				call: vi.fn().mockResolvedValue(undefined), // Simulation succeeds by default
 			});
 
 		getTokenInfoSpy = vi
@@ -493,6 +495,31 @@ describe('UniswapV4MintService', () => {
 
 			expect(result.success).toBe(false);
 			expect(result.error).toBeDefined();
+		});
+
+		it('should fail with simulation error when eth_call reverts', async () => {
+			// Override getViemClient to return a client whose call() rejects
+			getViemClientSpy.mockReturnValue({
+				readContract: vi.fn(),
+				getBalance: vi.fn(),
+				call: vi.fn().mockRejectedValue(new Error('InsufficientBalance()')),
+			});
+
+			const params: V4MintSimpleParams = {
+				token0: '0x0000000000000000000000000000000000000000',
+				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+				amount0Desired: '10000000000000000',
+				amount1Desired: '25000000',
+				chainId: 8453,
+			};
+
+			const result = await service.mintPosition('test-user', params, mockWalletService);
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('Transaction simulation failed');
+			expect(result.error).toContain('InsufficientBalance()');
+			// Should NOT have called walletService.transact
+			expect(mockWalletService.transact).not.toHaveBeenCalled();
 		});
 
 		it('should return explorer URL when transaction succeeds', async () => {
