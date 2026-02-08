@@ -81,6 +81,7 @@ interface PoolState {
 
 export class UniswapV4MintService {
 	private viemClients: Map<number, any>;
+	private tokenInfoCache: Map<string, TokenInfo> = new Map();
 
 	constructor() {
 		this.viemClients = new Map();
@@ -109,11 +110,13 @@ export class UniswapV4MintService {
 	}
 
 	/**
-	 * Get token information (symbol, decimals)
+	 * Get token information (symbol, decimals) with caching and proper error handling
 	 */
 	private async getTokenInfo(tokenAddress: string, chainId: number): Promise<TokenInfo> {
+		const normalizedAddress = tokenAddress.toLowerCase();
+
 		// Handle native ETH
-		if (tokenAddress === NATIVE_ETH_ADDRESS) {
+		if (normalizedAddress === NATIVE_ETH_ADDRESS) {
 			return {
 				address: NATIVE_ETH_ADDRESS,
 				symbol: 'ETH',
@@ -121,30 +124,51 @@ export class UniswapV4MintService {
 			};
 		}
 
+		// Check cache
+		const cacheKey = `${chainId}:${normalizedAddress}`;
+		const cached = this.tokenInfoCache.get(cacheKey);
+		if (cached) {
+			return cached;
+		}
+
 		const client = this.getViemClient(chainId);
 
 		try {
 			const [symbol, decimals] = await Promise.all([
 				client.readContract({
-					address: tokenAddress as `0x${string}`,
+					address: normalizedAddress as `0x${string}`,
 					abi: ERC20_ABI,
 					functionName: 'symbol',
 				}),
 				client.readContract({
-					address: tokenAddress as `0x${string}`,
+					address: normalizedAddress as `0x${string}`,
 					abi: ERC20_ABI,
 					functionName: 'decimals',
 				}),
 			]);
 
-			return {
-				address: tokenAddress,
+			const tokenInfo: TokenInfo = {
+				address: normalizedAddress,
 				symbol: symbol as string,
 				decimals: decimals as number,
 			};
+
+			// Cache immutable token metadata
+			this.tokenInfoCache.set(cacheKey, tokenInfo);
+
+			return tokenInfo;
 		} catch (error) {
-			console.error(`Failed to get token info for ${tokenAddress}:`, error);
-			throw new Error(`Invalid token address: ${tokenAddress}`);
+			const message = error instanceof Error ? error.message : String(error);
+			// Differentiate contract-level errors from transient RPC failures
+			const isContractError =
+				message.includes('reverted') ||
+				message.includes('execution reverted') ||
+				message.includes('invalid opcode') ||
+				message.includes('not a contract');
+			if (isContractError) {
+				throw new Error(`Invalid token address: ${normalizedAddress}`);
+			}
+			throw new Error(`Failed to fetch token info for ${normalizedAddress}: ${message}`);
 		}
 	}
 
@@ -235,9 +259,19 @@ export class UniswapV4MintService {
 				};
 			}
 
-			// Ensure token0 < token1 (Uniswap convention)
-			const [currency0, currency1] =
-				token0.toLowerCase() < token1.toLowerCase() ? [token0, token1] : [token1, token0];
+			// Normalize and sort token addresses (Uniswap convention: token0 < token1)
+			const t0 = token0.toLowerCase();
+			const t1 = token1.toLowerCase();
+
+			// Guard against identical token addresses after normalization
+			if (t0 === t1) {
+				return {
+					success: false,
+					error: 'token0 and token1 must be different addresses',
+				};
+			}
+
+			const [currency0, currency1] = t0 < t1 ? [t0, t1] : [t1, t0];
 
 			// Get token info
 			const [token0Info, token1Info] = await Promise.all([
@@ -289,6 +323,8 @@ export class UniswapV4MintService {
 							liquidity: poolState.liquidity.toString(),
 							token0Symbol: token0Info.symbol,
 							token1Symbol: token1Info.symbol,
+							token0Decimals: token0Info.decimals,
+							token1Decimals: token1Info.decimals,
 						},
 					};
 				}
@@ -320,6 +356,8 @@ export class UniswapV4MintService {
 					liquidity: '0',
 					token0Symbol: token0Info.symbol,
 					token1Symbol: token1Info.symbol,
+					token0Decimals: token0Info.decimals,
+					token1Decimals: token1Info.decimals,
 				},
 			};
 		} catch (error) {
@@ -529,8 +567,12 @@ export class UniswapV4MintService {
 				};
 			}
 
-			// Step 1: Discover pool
-			const poolDiscovery = await this.discoverPool({ token0, token1, chainId });
+			// Step 1: Discover pool (normalize addresses)
+			const poolDiscovery = await this.discoverPool({
+				token0: token0.toLowerCase(),
+				token1: token1.toLowerCase(),
+				chainId,
+			});
 			if (!poolDiscovery.success || !poolDiscovery.pool || !poolDiscovery.pool.exists) {
 				return {
 					success: false,
@@ -548,11 +590,9 @@ export class UniswapV4MintService {
 			const amount0DesiredForPool = tokensSwapped ? amount1Desired : amount0Desired;
 			const amount1DesiredForPool = tokensSwapped ? amount0Desired : amount1Desired;
 
-			// Step 2: Get token info (now correctly aligned with pool currencies)
-			const [token0Info, token1Info] = await Promise.all([
-				this.getTokenInfo(pool.poolKey.currency0, chainId),
-				this.getTokenInfo(pool.poolKey.currency1, chainId),
-			]);
+			// Step 2: Use token info from pool discovery (avoids redundant RPC calls)
+			const token0Info = { symbol: pool.token0Symbol, decimals: pool.token0Decimals };
+			const token1Info = { symbol: pool.token1Symbol, decimals: pool.token1Decimals };
 
 			// Parse amounts (using correctly mapped amounts)
 			const amount0Wei = parseUnits(amount0DesiredForPool, token0Info.decimals);

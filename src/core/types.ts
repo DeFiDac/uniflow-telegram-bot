@@ -206,6 +206,8 @@ export interface V4PoolDiscoveryResult {
 		liquidity: string;
 		token0Symbol: string;
 		token1Symbol: string;
+		token0Decimals: number;
+		token1Decimals: number;
 	};
 	error?: string;
 }

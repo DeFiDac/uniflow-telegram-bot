@@ -29,7 +29,7 @@ const createMockPoolResult = (exists: boolean): V4PoolDiscoveryResult => ({
 		exists,
 		poolKey: {
 			currency0: '0x0000000000000000000000000000000000000000',
-			currency1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+			currency1: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
 			fee: 3000,
 			tickSpacing: 60,
 			hooks: '0x0000000000000000000000000000000000000000',
@@ -39,6 +39,8 @@ const createMockPoolResult = (exists: boolean): V4PoolDiscoveryResult => ({
 		liquidity: '123456789',
 		token0Symbol: 'ETH',
 		token1Symbol: 'USDC',
+		token0Decimals: 18,
+		token1Decimals: 6,
 	},
 });
 
@@ -545,6 +547,127 @@ describe('UniswapV4MintService', () => {
 
 			expect(result.success).toBe(false);
 			expect(result.error).toBeDefined();
+		});
+	});
+
+	describe('token info caching', () => {
+		it('should call RPC only once for duplicate token info requests', async () => {
+			// Restore the real getTokenInfo so we can test caching behavior
+			getTokenInfoSpy.mockRestore();
+
+			const mockReadContract = vi.fn()
+				.mockResolvedValueOnce('USDC')   // symbol (1st call)
+				.mockResolvedValueOnce(6)          // decimals (1st call)
+				.mockResolvedValueOnce('USDC')   // symbol (should NOT happen if cached)
+				.mockResolvedValueOnce(6);         // decimals (should NOT happen if cached)
+
+			getViemClientSpy.mockReturnValue({
+				readContract: mockReadContract,
+				getBalance: vi.fn(),
+			});
+
+			const tokenAddress = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+
+			// Call getTokenInfo twice for the same token
+			const result1 = await (service as any).getTokenInfo(tokenAddress, 8453);
+			const result2 = await (service as any).getTokenInfo(tokenAddress, 8453);
+
+			expect(result1.symbol).toBe('USDC');
+			expect(result2.symbol).toBe('USDC');
+			// readContract should only be called twice (symbol + decimals) for the first call
+			expect(mockReadContract).toHaveBeenCalledTimes(2);
+		});
+
+		it('should resolve checksummed and lowercase addresses to same cache entry', async () => {
+			getTokenInfoSpy.mockRestore();
+
+			const mockReadContract = vi.fn()
+				.mockResolvedValueOnce('USDC')
+				.mockResolvedValueOnce(6);
+
+			getViemClientSpy.mockReturnValue({
+				readContract: mockReadContract,
+				getBalance: vi.fn(),
+			});
+
+			const checksummed = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+			const lowercase = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+
+			const result1 = await (service as any).getTokenInfo(checksummed, 8453);
+			const result2 = await (service as any).getTokenInfo(lowercase, 8453);
+
+			expect(result1.symbol).toBe('USDC');
+			expect(result2.symbol).toBe('USDC');
+			// Only 2 RPC calls total (not 4)
+			expect(mockReadContract).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	describe('error differentiation', () => {
+		it('should throw "Invalid token address" for contract-level errors', async () => {
+			getTokenInfoSpy.mockRestore();
+
+			const mockReadContract = vi.fn().mockRejectedValue(new Error('execution reverted'));
+
+			getViemClientSpy.mockReturnValue({
+				readContract: mockReadContract,
+				getBalance: vi.fn(),
+			});
+
+			await expect(
+				(service as any).getTokenInfo('0xdeadbeef00000000000000000000000000000000', 8453)
+			).rejects.toThrow('Invalid token address');
+		});
+
+		it('should throw "Failed to fetch" for transient RPC errors', async () => {
+			getTokenInfoSpy.mockRestore();
+
+			const mockReadContract = vi.fn().mockRejectedValue(new Error('request timeout'));
+
+			getViemClientSpy.mockReturnValue({
+				readContract: mockReadContract,
+				getBalance: vi.fn(),
+			});
+
+			await expect(
+				(service as any).getTokenInfo('0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', 8453)
+			).rejects.toThrow('Failed to fetch token info for');
+		});
+	});
+
+	describe('address normalization', () => {
+		it('discoverPool should return lowercase poolKey addresses', async () => {
+			const params: V4PoolDiscoveryParams = {
+				token0: '0x0000000000000000000000000000000000000000',
+				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // checksummed
+				chainId: 8453,
+			};
+
+			const result = await service.discoverPool(params);
+
+			expect(result.success).toBe(true);
+			if (result.pool) {
+				expect(result.pool.poolKey.currency0).toBe(result.pool.poolKey.currency0.toLowerCase());
+				expect(result.pool.poolKey.currency1).toBe(result.pool.poolKey.currency1.toLowerCase());
+			}
+		});
+
+		it('discoverPool should include token decimals in result', async () => {
+			const params: V4PoolDiscoveryParams = {
+				token0: '0x0000000000000000000000000000000000000000',
+				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+				chainId: 8453,
+			};
+
+			const result = await service.discoverPool(params);
+
+			expect(result.success).toBe(true);
+			if (result.pool) {
+				expect(result.pool.token0Decimals).toBeDefined();
+				expect(result.pool.token1Decimals).toBeDefined();
+				expect(typeof result.pool.token0Decimals).toBe('number');
+				expect(typeof result.pool.token1Decimals).toBe('number');
+			}
 		});
 	});
 
