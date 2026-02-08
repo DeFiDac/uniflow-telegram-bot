@@ -256,6 +256,15 @@ export class UniswapV4MintService {
 			// Normalize and sort token addresses (Uniswap convention: token0 < token1)
 			const t0 = token0.toLowerCase();
 			const t1 = token1.toLowerCase();
+
+			// Guard against identical token addresses after normalization
+			if (t0 === t1) {
+				return {
+					success: false,
+					error: 'token0 and token1 must be different addresses',
+				};
+			}
+
 			const [currency0, currency1] = t0 < t1 ? [t0, t1] : [t1, t0];
 
 			// Get token info
