@@ -170,7 +170,7 @@ Discover pool information for a token pair. By default, automatically tries mult
 - `token0` (required): First token address (0x...)
 - `token1` (required): Second token address (0x...)
 - `chainId` (required): Chain ID (1, 56, 8453, 42161, 130)
-- `fee` (optional): Specific fee tier to query (e.g., 500, 3000, 10000). When specified, only queries this fee tier instead of trying all three (~66% faster)
+- `fee` (optional): Specific fee tier to query (e.g., 500, 3000, 10000). When specified, only queries this fee tier instead of trying all three, which might be faster
 - `tickSpacing` (optional): Custom tick spacing for non-standard pools. Requires `fee` to be specified. If omitted, auto-derived from fee (500→10, 3000→60, 10000→200)
 
 **Example Requests:**
