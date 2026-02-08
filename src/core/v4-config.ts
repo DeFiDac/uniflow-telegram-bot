@@ -85,8 +85,8 @@ export const V4_CHAIN_CONFIGS: Record<number, UniswapV4ChainConfig> = {
 	8453: {
 		chainId: 8453,
 		name: 'Base',
-		positionManagerAddress: '0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e',
-		poolManagerAddress: '0x000000000004444c5dc75cB358380D2e3dE08A90',
+		positionManagerAddress: '0x7c5f5a4bbd8fd63184577525326123b519429bdc',
+		poolManagerAddress: '0x498581ff718922c3f8e6a244956af099b2652b2b',
 		stateViewAddress: '0xa3c0c9b65bad0b08107aa264b0f3db444b867a71',
 		subgraphUrl: buildSubgraphUrl(8453),
 		rpcUrl: INFURA_RPCS[8453] || PUBLIC_RPCS[8453],
@@ -103,8 +103,8 @@ export const V4_CHAIN_CONFIGS: Record<number, UniswapV4ChainConfig> = {
 	130: {
 		chainId: 130,
 		name: 'Unichain',
-		positionManagerAddress: '0xf969aee60879c54baaed9f3ed26147db216fd664',
-		poolManagerAddress: '0x00b036b58a818b1bc34d502d3fe730db729e62ac',
+		positionManagerAddress: '0x4529a01c7a0410167c5740c487a8de60232617bf',
+		poolManagerAddress: '0x1f98400000000000000000000000000000000004',
 		stateViewAddress: '0x86e8631a016f9068c3f085faf484ee3f5fdee8f2',
 		subgraphUrl: buildSubgraphUrl(130),
 		rpcUrl: INFURA_RPCS[130] || PUBLIC_RPCS[130],

@@ -12,6 +12,7 @@ import {
 	TransactResponseData,
 	SessionResponseData,
 	V4PositionsResponseData,
+	V4PoolDiscoveryParams,
 	V4PoolDiscoveryResponseData,
 	V4ApprovalResponseData,
 	V4MintResponseData,
@@ -194,7 +195,7 @@ export function createRouter(
 	});
 
 	/**
-	 * GET /api/v4/pool-info?token0=0x...&token1=0x...&chainId=1
+	 * GET /api/v4/pool-info?token0=0x...&token1=0x...&chainId=1&fee=3000&tickSpacing=60
 	 * Discover pool information for a token pair
 	 */
 	if (uniswapV4MintService) {
@@ -202,12 +203,27 @@ export function createRouter(
 			'/v4/pool-info',
 			validatePoolDiscoveryParams,
 			async (req: Request, res: Response) => {
-				const { token0, token1, chainId } = req.query;
-				const result = await uniswapV4MintService.discoverPool({
-					token0: token0 as string,
-					token1: token1 as string,
+				const { token0, token1, chainId, fee, tickSpacing } = req.query;
+
+				// Normalize addresses to lowercase
+				const normalizedToken0 = (token0 as string).toLowerCase();
+				const normalizedToken1 = (token1 as string).toLowerCase();
+
+				const discoveryParams: V4PoolDiscoveryParams = {
+					token0: normalizedToken0,
+					token1: normalizedToken1,
 					chainId: Number(chainId),
-				});
+				};
+
+				// Add optional parameters if provided
+				if (fee !== undefined) {
+					discoveryParams.fee = Number(fee);
+				}
+				if (tickSpacing !== undefined) {
+					discoveryParams.tickSpacing = Number(tickSpacing);
+				}
+
+				const result = await uniswapV4MintService.discoverPool(discoveryParams);
 
 				if (result.success && result.pool) {
 					const response: ApiResponse<V4PoolDiscoveryResponseData> = {

@@ -164,16 +164,30 @@ GET /api/v4/positions/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045?chainId=1
 
 ### GET /api/v4/pool-info
 
-Discover pool information for a token pair. Automatically tries multiple fee tiers (500, 3000, 10000) to find an existing pool.
+Discover pool information for a token pair. By default, automatically tries multiple fee tiers (500, 3000, 10000) to find an existing pool. You can optionally specify a specific fee tier for faster queries.
 
 **Query Parameters:**
 - `token0` (required): First token address (0x...)
 - `token1` (required): Second token address (0x...)
 - `chainId` (required): Chain ID (1, 56, 8453, 42161, 130)
+- `fee` (optional): Specific fee tier to query (e.g., 500, 3000, 10000). When specified, only queries this fee tier instead of trying all three, which might be faster
+- `tickSpacing` (optional): Custom tick spacing for non-standard pools. Requires `fee` to be specified. If omitted, auto-derived from fee (500→10, 3000→60, 10000→200)
 
-**Example Request:**
+**Example Requests:**
+
+Basic query (tries all fee tiers):
 ```bash
 curl "http://localhost:3000/api/v4/pool-info?token0=0x0000000000000000000000000000000000000000&token1=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&chainId=8453"
+```
+
+Efficient query (specific fee tier - recommended when you know the fee):
+```bash
+curl "http://localhost:3000/api/v4/pool-info?token0=0x0000000000000000000000000000000000000000&token1=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&chainId=8453&fee=3000"
+```
+
+Custom pool query (non-standard tick spacing):
+```bash
+curl "http://localhost:3000/api/v4/pool-info?token0=0x0000000000000000000000000000000000000000&token1=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&chainId=8453&fee=3000&tickSpacing=100"
 ```
 
 **Response (Pool Found):**
@@ -183,6 +197,7 @@ curl "http://localhost:3000/api/v4/pool-info?token0=0x00000000000000000000000000
   "data": {
     "pool": {
       "exists": true,
+      "poolId": "0xe070797535b13431808f8fc81fdbe7b41362960ed0b55bc2b6117c49c51b7eb9",
       "poolKey": {
         "currency0": "0x0000000000000000000000000000000000000000",
         "currency1": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
@@ -369,8 +384,8 @@ curl -X POST http://localhost:3000/api/connect \
   -H "Content-Type: application/json" \
   -d '{"userId": "telegram_123456"}'
 
-# Step 2: Discover pool (ETH/USDC on Base)
-curl "http://localhost:3000/api/v4/pool-info?token0=0x0000000000000000000000000000000000000000&token1=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&chainId=8453"
+# Step 2: Discover pool (ETH/USDC on Base with 0.3% fee tier)
+curl "http://localhost:3000/api/v4/pool-info?token0=0x0000000000000000000000000000000000000000&token1=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&chainId=8453&fee=3000"
 
 # Step 3: Approve USDC (not needed for ETH)
 curl -X POST http://localhost:3000/api/v4/approve \
@@ -604,7 +619,7 @@ UniFlow provides comprehensive Uniswap V4 integration for both reading and creat
 ### Position Minting
 
 **How It Works:**
-1. **Pool Discovery**: Automatically tries multiple fee tiers (500, 3000, 10000) to find existing pools
+1. **Pool Discovery**: Automatically tries multiple fee tiers (500, 3000, 10000) to find existing pools. For better performance, specify the `fee` parameter to query a specific tier directly.
 2. **Balance Validation**: Checks user token balances before transactions
 3. **Approval Checking**: Verifies token approvals and provides clear instructions if needed
 4. **Position Creation**: Mints full-range positions using Uniswap V4 SDK

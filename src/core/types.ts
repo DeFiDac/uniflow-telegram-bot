@@ -185,12 +185,15 @@ export interface V4PoolDiscoveryParams {
 	token0: string;
 	token1: string;
 	chainId: number;
+	fee?: number; // Optional specific fee tier
+	tickSpacing?: number; // Optional custom tick spacing
 }
 
 export interface V4PoolDiscoveryResult {
 	success: boolean;
 	pool?: {
 		exists: boolean;
+		poolId?: string;
 		poolKey: {
 			currency0: string;
 			currency1: string;

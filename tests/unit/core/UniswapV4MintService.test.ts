@@ -121,6 +121,77 @@ describe('UniswapV4MintService', () => {
 			expect(result.pool?.exists).toBeDefined();
 		});
 
+		it('should query specific fee tier when fee parameter provided', async () => {
+			const params: V4PoolDiscoveryParams = {
+				token0: '0x0000000000000000000000000000000000000000',
+				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+				chainId: 8453,
+				fee: 3000,
+			};
+
+			const result = await service.discoverPool(params);
+
+			expect(result.success).toBe(true);
+			expect(fetchPoolStateSpy).toHaveBeenCalledTimes(1); // Should only call once for fee=3000
+		});
+
+		it('should use custom tickSpacing when both fee and tickSpacing provided', async () => {
+			const params: V4PoolDiscoveryParams = {
+				token0: '0x0000000000000000000000000000000000000000',
+				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+				chainId: 8453,
+				fee: 3000,
+				tickSpacing: 100, // Custom tick spacing
+			};
+
+			const result = await service.discoverPool(params);
+
+			expect(result.success).toBe(true);
+			// Verify fetchPoolState was called with custom tickSpacing
+			expect(fetchPoolStateSpy).toHaveBeenCalledWith(
+				expect.objectContaining({
+					fee: 3000,
+					tickSpacing: 100,
+				}),
+				8453
+			);
+		});
+
+		it('should return error when tickSpacing provided without fee', async () => {
+			const params: V4PoolDiscoveryParams = {
+				token0: '0x0000000000000000000000000000000000000000',
+				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+				chainId: 8453,
+				tickSpacing: 60, // tickSpacing without fee
+			};
+
+			const result = await service.discoverPool(params);
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('tickSpacing cannot be specified without fee');
+		});
+
+		it('should auto-derive tickSpacing from fee when only fee provided', async () => {
+			const params: V4PoolDiscoveryParams = {
+				token0: '0x0000000000000000000000000000000000000000',
+				token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+				chainId: 8453,
+				fee: 500, // Should auto-derive tickSpacing=10
+			};
+
+			const result = await service.discoverPool(params);
+
+			expect(result.success).toBe(true);
+			// Verify fetchPoolState was called with auto-derived tickSpacing
+			expect(fetchPoolStateSpy).toHaveBeenCalledWith(
+				expect.objectContaining({
+					fee: 500,
+					tickSpacing: 10, // Auto-derived from fee=500
+				}),
+				8453
+			);
+		});
+
 		it('should handle unsupported chain ID', async () => {
 			const params: V4PoolDiscoveryParams = {
 				token0: '0x0000000000000000000000000000000000000000',

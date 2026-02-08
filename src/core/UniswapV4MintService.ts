@@ -18,7 +18,7 @@ import {
 	V4MintResult,
 	ErrorCodes,
 } from './types';
-import { V4_CHAIN_CONFIGS, STATE_VIEW_ABI, ERC20_ABI, POOL_MANAGER_ABI } from './v4-config';
+import { V4_CHAIN_CONFIGS, STATE_VIEW_ABI, ERC20_ABI } from './v4-config';
 import { WalletService } from './WalletService';
 
 // Unichain chain config (not in viem yet)
@@ -52,6 +52,20 @@ const FEE_TIERS = [
 	{ fee: 10000, tickSpacing: 200 },
 ];
 
+/**
+ * Derive default tickSpacing from fee tier
+ * Based on standard Uniswap V4 fee tier mapping
+ */
+function getDefaultTickSpacing(fee: number): number {
+	const feeToTickSpacing: Record<number, number> = {
+		100: 1,
+		500: 10,
+		3000: 60,
+		10000: 200,
+	};
+	return feeToTickSpacing[fee] || 60; // Default to 60 if unknown fee
+}
+
 interface TokenInfo {
 	address: string;
 	symbol: string;
@@ -59,6 +73,7 @@ interface TokenInfo {
 }
 
 interface PoolState {
+	poolId: string;
 	sqrtPriceX96: bigint;
 	tick: number;
 	liquidity: bigint;
@@ -150,21 +165,41 @@ export class UniswapV4MintService {
 		const client = this.getViemClient(chainId);
 
 		try {
-			// Call getSlot0 from PoolManager
-			const slot0Result = await client.readContract({
-				address: config.poolManagerAddress as `0x${string}`,
-				abi: POOL_MANAGER_ABI,
-				functionName: 'getSlot0',
-				args: [
-					{
-						currency0: poolKey.currency0 as `0x${string}`,
-						currency1: poolKey.currency1 as `0x${string}`,
-						fee: poolKey.fee,
-						tickSpacing: poolKey.tickSpacing,
-						hooks: poolKey.hooks as `0x${string}`,
-					},
-				],
-			});
+			// Compute poolId = keccak256(abi.encode(poolKey))
+			const poolId = keccak256(
+				encodeAbiParameters(
+					[
+						{ name: 'currency0', type: 'address' },
+						{ name: 'currency1', type: 'address' },
+						{ name: 'fee', type: 'uint24' },
+						{ name: 'tickSpacing', type: 'int24' },
+						{ name: 'hooks', type: 'address' },
+					],
+					[
+						poolKey.currency0 as `0x${string}`,
+						poolKey.currency1 as `0x${string}`,
+						poolKey.fee,
+						poolKey.tickSpacing,
+						poolKey.hooks as `0x${string}`,
+					]
+				)
+			);
+
+			// Query slot0 and liquidity from StateView using poolId
+			const [slot0Result, liquidity] = await Promise.all([
+				client.readContract({
+					address: config.stateViewAddress as `0x${string}`,
+					abi: STATE_VIEW_ABI,
+					functionName: 'getSlot0',
+					args: [poolId],
+				}),
+				client.readContract({
+					address: config.stateViewAddress as `0x${string}`,
+					abi: STATE_VIEW_ABI,
+					functionName: 'getLiquidity',
+					args: [poolId],
+				}),
+			]);
 
 			const [sqrtPriceX96, tick] = slot0Result as readonly [bigint, number, number, number];
 
@@ -173,40 +208,11 @@ export class UniswapV4MintService {
 				return null;
 			}
 
-			// Compute poolId by encoding PoolKey and hashing it
-			// PoolKey struct: (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks)
-			const encodedPoolKey = encodeAbiParameters(
-				[
-					{ name: 'currency0', type: 'address' },
-					{ name: 'currency1', type: 'address' },
-					{ name: 'fee', type: 'uint24' },
-					{ name: 'tickSpacing', type: 'int24' },
-					{ name: 'hooks', type: 'address' },
-				],
-				[
-					poolKey.currency0 as `0x${string}`,
-					poolKey.currency1 as `0x${string}`,
-					poolKey.fee,
-					poolKey.tickSpacing,
-					poolKey.hooks as `0x${string}`,
-				]
-			);
-
-			// poolId = keccak256(abi.encode(poolKey))
-			const poolId = keccak256(encodedPoolKey);
-
-			// Query actual liquidity from StateView
-			const liquidity = (await client.readContract({
-				address: config.stateViewAddress as `0x${string}`,
-				abi: STATE_VIEW_ABI,
-				functionName: 'getLiquidity',
-				args: [poolId],
-			})) as bigint;
-
 			return {
+				poolId,
 				sqrtPriceX96,
 				tick,
-				liquidity,
+				liquidity: liquidity as bigint,
 			};
 		} catch (error) {
 			console.error('Failed to fetch pool state:', error);
@@ -218,7 +224,7 @@ export class UniswapV4MintService {
 	 * Discover pool for token pair (tries multiple fee tiers)
 	 */
 	async discoverPool(params: V4PoolDiscoveryParams): Promise<V4PoolDiscoveryResult> {
-		const { token0, token1, chainId } = params;
+		const { token0, token1, chainId, fee: requestedFee, tickSpacing: requestedTickSpacing } = params;
 
 		try {
 			// Validate chain
@@ -239,8 +245,28 @@ export class UniswapV4MintService {
 				this.getTokenInfo(currency1, chainId),
 			]);
 
+			// Determine which fee tiers to try
+			let feeTiersToTry: Array<{ fee: number; tickSpacing: number }>;
+
+			if (requestedFee !== undefined) {
+				// User specified a fee - query ONLY that fee tier
+				const tickSpacing =
+					requestedTickSpacing !== undefined ? requestedTickSpacing : getDefaultTickSpacing(requestedFee);
+
+				feeTiersToTry = [{ fee: requestedFee, tickSpacing }];
+			} else if (requestedTickSpacing !== undefined) {
+				// tickSpacing without fee - error (ambiguous)
+				return {
+					success: false,
+					error: 'tickSpacing cannot be specified without fee. Please provide both or neither.',
+				};
+			} else {
+				// No fee specified - try all fee tiers (backward compatible)
+				feeTiersToTry = FEE_TIERS;
+			}
+
 			// Try each fee tier
-			for (const { fee, tickSpacing } of FEE_TIERS) {
+			for (const { fee, tickSpacing } of feeTiersToTry) {
 				const poolKey = {
 					currency0,
 					currency1,
@@ -256,6 +282,7 @@ export class UniswapV4MintService {
 						success: true,
 						pool: {
 							exists: true,
+							poolId: poolState.poolId,
 							poolKey,
 							currentTick: poolState.tick,
 							sqrtPriceX96: poolState.sqrtPriceX96.toString(),
@@ -268,6 +295,15 @@ export class UniswapV4MintService {
 			}
 
 			// No pool found with any fee tier
+			// Use requested fee/tickSpacing for defaults if provided, otherwise use 3000/60
+			const defaultFee = requestedFee !== undefined ? requestedFee : 3000;
+			const defaultTickSpacing =
+				requestedTickSpacing !== undefined
+					? requestedTickSpacing
+					: requestedFee !== undefined
+						? getDefaultTickSpacing(requestedFee)
+						: 60;
+
 			return {
 				success: true,
 				pool: {
@@ -275,8 +311,8 @@ export class UniswapV4MintService {
 					poolKey: {
 						currency0,
 						currency1,
-						fee: 3000, // Default
-						tickSpacing: 60,
+						fee: defaultFee,
+						tickSpacing: defaultTickSpacing,
 						hooks: NATIVE_ETH_ADDRESS,
 					},
 					currentTick: 0,
